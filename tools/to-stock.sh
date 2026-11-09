@@ -7,9 +7,10 @@
 #   bash ~/pacman/port/tools/to-stock.sh --no-log   # flash + reboot only
 #   bash ~/pacman/port/tools/to-stock.sh -n NAME    # log name: logs/log-NAME-<date>.txt
 #
-# The phone must be in fastboot (from mainline: power + volume down, SHORT press;
-# a long reset may wipe RAM and pstore). From Android the script itself runs
-# `adb reboot bootloader`.
+# The script gets the phone into fastboot itself: from Android with `adb reboot bootloader`,
+# from the mainline shell on USB with `pacman-reboot bootloader`. If neither is there
+# (e.g. mainline hung) it waits for power + volume down, SHORT press; a long reset may
+# wipe RAM and pstore.
 #
 # Safety: only boot_b and vendor_boot_b are written; stock/ is only read.
 
@@ -58,6 +59,11 @@ if ! fb_present; then
 	if [[ "$(adb get-state 2>/dev/null)" == "device" ]]; then
 		say "Phone runs Android: adb reboot bootloader"
 		adb reboot bootloader
+	elif [[ -e /dev/ttyACM0 && -n "$(lsusb -d 0525:a4a7 2>/dev/null)" ]]; then
+		# mainline + busybox shell on ttyGS0 (stage 2): reboot-mode -> LK fastboot.
+		# The shell dies with the reboot, so pacsh's timeout is expected.
+		say "Phone runs mainline: pacman-reboot bootloader (USB serial)"
+		python3 -I "$(dirname "$0")/pacsh.py" run 'pacman-reboot bootloader' -t 3 >/dev/null 2>&1 || true
 	else
 		say "Waiting for fastboot (power + volume down, short press)..."
 	fi

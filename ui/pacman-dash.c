@@ -4,8 +4,8 @@
  *
  * Runs as /init from the kernel's built-in initramfs on the Nothing Phone (2a)
  * mainline bring-up. No input devices yet, so it only shows things:
- * kernel, uptime, per-core CPU load, memory, load average. A helper process
- * keeps one core at a time busy so the bars visibly move.
+ * kernel, uptime, per-core CPU load, memory, load average. A core's bar turns
+ * red above 80 % load.
  *
  * Build:  aarch64-linux-gnu-gcc -O2 -static -o pacman-dash pacman-dash.c
  * Preview on a PC (writes a PPM image instead of using /dev/fb0):
@@ -16,8 +16,8 @@
 #include <fcntl.h>
 #include <linux/fb.h>
 #include <linux/kd.h>
+#include <limits.h>
 #include <math.h>
-#include <sched.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -231,29 +231,67 @@ static void loadavg(char *out, size_t n)
 	snprintf(out, n, "%.2f  %.2f  %.2f", a, b, c);
 }
 
-/* --------------------------------------------------------- demo load helper */
+/*
+ * Temperatures from the kernel's thermal zones (mtk_therm_intf driver:
+ * types "cpu0-thermal".."cpu7-thermal" and "gpu-thermal").
+ * cpu_tz[c] / gpu_tz hold the zone's temp file path, empty if missing.
+ */
+static char cpu_tz[MAX_CPUS][64], gpu_tz[64];
 
-static volatile int *demo_cpu;	/* shared with the helper: which core is busy */
-
-static void demo_load(int ncpu)
+static void find_thermal_zones(void)
 {
-	for (;;)
-		for (int c = 0; c < ncpu; c++) {
-			cpu_set_t set;
-			CPU_ZERO(&set);
-			CPU_SET(c, &set);
-			sched_setaffinity(0, sizeof(set), &set);
-			*demo_cpu = c;
-			struct timespec t0, t;
-			clock_gettime(CLOCK_MONOTONIC, &t0);
-			do {	/* ~2.5 s of busy work on core c */
-				for (volatile int i = 0; i < 100000; i++)
-					;
-				clock_gettime(CLOCK_MONOTONIC, &t);
-			} while ((t.tv_sec - t0.tv_sec) * 1000 + (t.tv_nsec - t0.tv_nsec) / 1000000 < 2500);
-			*demo_cpu = -1;
-			sleep(1);
-		}
+	for (int i = 0; i < 64; i++) {
+		char path[64], type[32] = "";
+		int cpu;
+		FILE *f;
+
+		snprintf(path, sizeof(path), "/sys/class/thermal/thermal_zone%d/type", i);
+		f = fopen(path, "r");
+		if (!f)
+			continue;
+		if (!fgets(type, sizeof(type), f))
+			type[0] = 0;
+		fclose(f);
+		snprintf(path, sizeof(path), "/sys/class/thermal/thermal_zone%d/temp", i);
+		if (sscanf(type, "cpu%d-thermal", &cpu) == 1 && cpu >= 0 && cpu < MAX_CPUS)
+			snprintf(cpu_tz[cpu], sizeof(cpu_tz[cpu]), "%s", path);
+		else if (!strncmp(type, "gpu-thermal", 11))
+			snprintf(gpu_tz, sizeof(gpu_tz), "%s", path);
+	}
+}
+
+/* millidegrees C, or INT_MIN if unavailable */
+static int read_temp(const char *path)
+{
+	FILE *f;
+	int t;
+
+	if (!path[0] || !(f = fopen(path, "r")))
+		return INT_MIN;
+	if (fscanf(f, "%d", &t) != 1)
+		t = INT_MIN;
+	fclose(f);
+	return t;
+}
+
+#define TEMP_HOT	60000	/* drawn in red from here */
+
+/* "37.9°C" (the font has no degree sign: draw a small ring) */
+static void temp_text(int x, int y, int scale, int mdeg)
+{
+	char s[16];
+	uint32_t col = mdeg >= TEMP_HOT ? C_RED : C_FG;
+
+	if (mdeg == INT_MIN) {
+		text(x, y, scale, C_DIM, "--");
+		return;
+	}
+	snprintf(s, sizeof(s), "%.1f", mdeg / 1000.0);
+	text(x, y, scale, col, s);
+	x += (int)strlen(s) * 8 * scale + 3 * scale;
+	disc(x + 2 * scale, y + 4 * scale, 2 * scale, col);
+	disc(x + 2 * scale, y + 4 * scale, scale, C_BG);
+	text(x + 5 * scale, y, scale, col, "C");
 }
 
 /* ------------------------------------------------------------------- setup */
@@ -329,13 +367,7 @@ int main(void)
 	ncpu = read_cpustat(prev, MAX_CPUS);
 	if (ncpu <= 0)
 		ncpu = 1;
-
-	demo_cpu = mmap(NULL, sizeof(int), PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-	*demo_cpu = -1;
-	if (!preview && fork() == 0) {
-		demo_load(ncpu);
-		_exit(0);
-	}
+	find_thermal_zones();
 
 	for (;; frame++) {
 		char s[160];
@@ -389,15 +421,21 @@ int main(void)
 		/* cpu bars */
 		y += 190;
 		text(60, y, 3, C_DIM, "CPU");
+		text(630, y, 3, C_DIM, "LOAD");
+		text(800, y, 3, C_DIM, "TEMP");
 		y += 64;
 		for (int c = 0; c < ncpu; c++, y += 64) {
-			uint32_t col = (*demo_cpu == c) ? C_RED : C_FG;
+			uint32_t col = load[c] > 0.8 ? C_RED : C_FG;
 			snprintf(s, sizeof(s), "%d %s", c, part[c]);
 			text(60, y, 3, C_DIM, s);
-			bar(330, y + 8, 500, 32, load[c], col);
+			bar(250, y + 8, 340, 32, load[c], col);
 			snprintf(s, sizeof(s), "%3d%%", (int)(load[c] * 100 + 0.5));
-			text(860, y, 3, C_FG, s);
+			text(630, y, 3, C_FG, s);
+			temp_text(800, y, 3, preview ? 37000 + 400 * c : read_temp(cpu_tz[c]));
 		}
+		text(60, y, 3, C_DIM, "GPU");
+		temp_text(800, y, 3, preview ? 33000 : read_temp(gpu_tz));
+		y += 64;
 
 		/* memory */
 		unsigned long long mt = meminfo("MemTotal"), ma = meminfo("MemAvailable");

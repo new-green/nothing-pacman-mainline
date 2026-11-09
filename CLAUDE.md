@@ -17,7 +17,8 @@ commands).
 ## Status (2026-11-09)
 - Mainline 7.4-rc1 boots: 8 CPUs, GICv3, arch timer, PSCI, mtk-wdt, ramoops
 - Boot logs on screen via our driver `drivers/video/fbdev/pacman-cmdfb.c` (fbcon on fb0)
-- `ui/pacman-dash.c`: fb0 dashboard, built into the kernel as /pacman-init — WORKS on device (2026-11-09, needs cmdfb .fb_mmap)
+- `ui/pacman-dash.c`: fb0 dashboard (load + temps), started by /pacman-init — WORKS on device
+- USB serial shell, thermal zones, reboot-to-fastboot, slim kernel: see sections below
 - No clocks/pinctrl/PMIC/UFS/USB/input drivers yet (all downstream nodes defer)
 
 ## Hard-won rules about LK (do not relearn these)
@@ -84,6 +85,21 @@ Build / flash commands: see README.md.
 - FIXED by the slim config (pacman.config disables all 52 non-MediaTek ARCH_* platforms, =y 3338 -> 2211):
   Image 0x1d55a00 (29.3 MiB), lz4 15.8 MiB incl. fastfetch. Boots; init starts at 0.39 s (was 0.72 s).
   Known-good pair now: out/pacman-slim-boot.img + out/pacman-usb1-vendor_boot.img.
+
+## Thermal + reboot-to-fastboot (2026-11-09, WORKS)
+- Temps come from the MCUPM thermal firmware (started by LK), not from LVTS directly: it writes
+  signed millidegrees into SRAM 0x114000 (DT `therm-intf@114000`, "mediatek,therm_intf"):
+  CPU n at 0x000+4n, GPU 0x180, CPU limit/cur freq kHz at 0x200/0x210 (little, big).
+  Layout from downstream drivers/thermal/mediatek/thermal_interface.h. Unused slots = 0x27bc86aa.
+- Our driver linux/drivers/thermal/mediatek/mtk_therm_intf.c (CONFIG_MTK_THERM_INTF=y, copy in
+  port/drivers/thermal/): read-only, zones cpu0..7-thermal + gpu-thermal, critical trip 95 C
+  (param mtk_therm_intf.crit_temp) -> kernel powers off. Idle ~37-38 C.
+- Reboot mode: DT watchdog@1c007000/reboot-mode (syscon-reboot-mode, TOPRGU+0x24, bootloader=3,
+  recovery=2); SYSCON_REBOOT_MODE=y already in defconfig. `pacman-reboot bootloader`
+  (port/ui/pacman-reboot.c, in initramfs) -> LK fastboot. tools/to-stock.sh uses it automatically.
+- pacman-dash: CPU load test helper REMOVED; shows per-core temp (°C) + GPU temp from thermal zones.
+- Known-good pair: out/pacman-therm-boot.img (dashtemp = same + new dash) + out/pacman-usb1-vendor_boot.img.
+- User-facing command cheat sheet: docs/COMMANDS.md — keep it updated.
 
 ## Phone shell from the PC: tools/pacsh.py (stage 2)
 - `pacsh.py run 'cmd'` runs a command over /dev/ttyACM0; `pacsh.py push LOCAL REMOTE [-x]` copies a
