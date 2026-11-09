@@ -231,6 +231,24 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 - PC: `gvncviewer 172.16.42.1:0`. Idle: ~520 MB RAM, load 0.4, 41 °C. Only hicolor icons; clock
   shows 1970 (no RTC driver).
 
+## Touchscreen (in progress, plan approved 2026-11-10; stage 0 = recon not yet run on the phone)
+- Hardware (live DTB): FocalTech **FT3681** (vendor config FTS_CHIP_TYPE _FT3681 = 0x3681008A), SPI device
+  on `spi3@11013000` ("mediatek,mt6985-spi", CS0, 6 MHz), reset GPIO 5, irq GPIO 96 (EINT, falling),
+  `vdd-supply` = MT6368 `VTP`. SPI3 pins: group A = GPIO 141-144 mode 2 (CLK, CSB, MO, MI); group B would
+  be GPIO 93-96 mode 3 but 96 is the touch irq -> A is used (`mediatek,pad-select = <0>`).
+- Clocks: topckgen `spi_ck` -> pericfg_ao (0x11036000) gate PERAO0 bit 15 (status +0x10, set +0x28,
+  clr +0x2c; status bit 1 = gated). No mainline MT6886 clock driver.
+- GPIO regs (vendor pinctrl-mt6886.c): base 0x10005000, DIR +0x000, DIN +0x200, MODE +0x300, 0x10 per
+  register, mode 4 bits/pin (8 pins/reg), dir/din 32 pins/reg. EINT numbers == GPIO numbers.
+- Mainline status: pinctrl "paris" framework + mt6878/mt6893 drivers exist, no mt6886; spi-mt65xx has
+  mt6893/mt6991 data, no mt6886/mt6985 match; no FocalTech SPI touch driver (only I2C edt-ft5x06).
+  Vendor sources: drivers/pinctrl/mediatek/pinctrl-mt6886.c + pinctrl-mtk-mt6886.h,
+  drivers/input/touchscreen/focaltech_touch/ (focaltech_spi_v2.c = SPI framing, focaltech_core.c).
+- `tools/recon-touch.sh`: read-only stage 0 (pin modes/levels, SPI3 gate, SPI3 regs if clocked, samples
+  the irq line). Stages: 0 recon, 1 pinctrl-mt6886 + EINT, 2 SPI3, 3 VTP supply/reset, 4 small
+  focaltech-fts-spi driver, 5 Xorg input + on-screen keyboard. Full plan:
+  ~/.claude/plans/flashlamaya-haz-r-m-binary-magpie.md (Turkish).
+
 ## Alpine as root filesystem (stage 4, WORKS 2026-11-09)
 - `tools/build-vendor-boot.sh [dtb]`: gzip newc cpio of `~/pacman/alpine/rootfs` (root-owned) replaces
   fragment 00 (type platform) of the stock vendor_boot via `work/vb_args.txt`; fragment 01 (recovery)
