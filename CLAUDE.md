@@ -75,6 +75,38 @@ Build / flash commands: see README.md.
   Images: out/pacman-usb1b-boot.img + out/pacman-usb1-vendor_boot.img (current known-good pair).
 - Tip: pstore logs contain bit flips -> file(1) says "data"; grep needs -a (`command grep -a`).
 
+## LK kernel size limit (found 2026-11-09) — READ BEFORE GROWING THE KERNEL
+- usb2: Image 0x2b67a00 (43.4 MiB), lz4 20 077 733 (19.1 MiB) -> boots.
+  usb2b (+fastfetch in initramfs): Image 0x2c97a00 (44.6 MiB), lz4 21 316 789 (20.3 MiB) -> LK bootloop
+  (preloader every 13-20 s, kernel never reaches USB). Limit is either ~20 MiB compressed or ~44 MiB
+  (0x2c00000) decompressed; not known which. Stock kernel lz4 = 0x13bbd9b (19.7 MiB).
+- Always check both sizes before flashing; keep a margin. Slimming defconfig is the fix.
+
+## Phone shell from the PC: tools/pacsh.py (stage 2)
+- `pacsh.py run 'cmd'` runs a command over /dev/ttyACM0; `pacsh.py push LOCAL REMOTE [-x]` copies a
+  file into the phone's RAM (gzip+base64, md5-checked, ~16 MB/s). Close picocom first.
+- fastfetch 2.70.0 (static, `tools/build-fastfetch.sh` -> ~/pacman/fastfetch/fastfetch) runs this way
+  (needs USER=root; /etc is a dangling Android link -> replace with a dir holding os-release).
+- Pitfall: a freshly reset ttyACM0 has echo ON; the console's buffered boot log gets echoed back into
+  the phone shell as input (harmless: no storage drivers). termios then persists raw across replugs;
+  pacsh sends ^C after opening.
+- "Disk (/)" ~4.69 GiB in fastfetch = tmpfs rootfs limit (half of RAM at early boot, before 1.25 GiB
+  of stock-DTB CMA pools ssmr/ssheap are released). Not storage.
+
+## USB serial console — stage 2 WORKS (2026-11-09, out/pacman-usb2-boot.img)
+- Static busybox 1.37.0: `tools/build-busybox.sh` -> ~/pacman/busybox/busybox (source + sha256 there).
+- Initramfs (`ui/initramfs.list`): everything under /pacman/ (LK's Android ramdisk is unpacked on top
+  and has its own /bin /etc /init): /pacman/bin/{busybox,pacman-dash}, /pacman-init = `ui/pacman-init.sh`.
+- pacman-init.sh (busybox sh as PID 1): mounts, `busybox --install -s /pacman/bin`, pacman-dash &,
+  respawn loop `setsid -c sh -i` on /dev/ttyGS0. Writes "pacman-init: ..." lines to /dev/kmsg.
+- Config: U_SERIAL_CONSOLE=y, cmdline `console=ttyGS0,115200 console=tty0` (tty0 last = /dev/console).
+- Image: out/pacman-usb2-boot.img + out/pacman-usb1-vendor_boot.img (DTB unchanged) = known-good pair.
+  Tested: root shell on ttyGS0, kernel log on ttyGS0, pacman-dash on the panel.
+- Committed init also sets hostname pacman, USER=root, /etc -> /pacman/etc (not yet booted;
+  the same steps worked by hand).
+- PC: `picocom -b 115200 /dev/ttyACM0` (exit: Ctrl-A Ctrl-X). Quieten kernel spam in the shell:
+  `echo N > /sys/module/printk/parameters/ignore_loglevel; dmesg -n 1`.
+
 ### Stage 1 details
 - DTB `hybrid/test-U.dts` -> `test-U.img` = test-H + usb0: clocks=<clk26m 0x42> "sys_ck", no vusb33-supply,
   phys = u2 only, dr_mode "peripheral", `mediatek,u3p-dis-msk = <1>` (else mtu3 waits for U3 MAC clock
