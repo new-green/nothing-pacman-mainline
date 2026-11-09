@@ -1,0 +1,36 @@
+From 348c3823a36c0fd766ac3dffd65873abc8dc5b2f Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 19:53:41 +0300
+Subject: [PATCH 6/8] spmi: mtk-pmif: add MT6886
+
+The PMIF and SPMI master of MT6886 (Dimensity 7200) use the same
+register layout as MT8195, and the AP uses software interface channel 2
+like the vendor kernel does. Match "mediatek,mt6886-spmi" to the MT8195
+data (SPMI 1.x: no interrupt setup, nothing is written at probe).
+
+Tested on Nothing Phone (2a): the MT6363 PMIC (usid 4) reads back its
+chip id 0x63.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/spmi/spmi-mtk-pmif.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/spmi/spmi-mtk-pmif.c b/drivers/spmi/spmi-mtk-pmif.c
+index 1048420b5..65d9a87b9 100644
+--- a/drivers/spmi/spmi-mtk-pmif.c
++++ b/drivers/spmi/spmi-mtk-pmif.c
+@@ -838,6 +838,10 @@ static const struct of_device_id mtk_spmi_match_table[] = {
+ 	{
+ 		.compatible = "mediatek,mt6873-spmi",
+ 		.data = &mt6873_pmif_arb,
++	}, {
++		/* same PMIF/SPMI-master register layout as MT8195, AP on channel 2 */
++		.compatible = "mediatek,mt6886-spmi",
++		.data = &mt8195_pmif_arb,
+ 	}, {
+ 		.compatible = "mediatek,mt8195-spmi",
+ 		.data = &mt8195_pmif_arb,
+-- 
+2.56.0
+

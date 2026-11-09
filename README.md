@@ -1,6 +1,6 @@
 # Mainline Linux on the Nothing Phone (2a) ("Pacman", MediaTek MT6886)
 
-Bring-up of a mainline Linux kernel (7.4-rc1) on the Nothing Phone (2a), codename *Pacman*
+Bring-up of a mainline Linux kernel (7.3.3 stable) on the Nothing Phone (2a), codename *Pacman*
 (MediaTek Dimensity 7200 Pro / MT6886). It boots from the stock bootloader (LK), shows the
 boot log on the panel, gives a root shell and a network link over USB, reads CPU/GPU
 temperatures and boots straight into a small Alpine Linux userspace, all without a PC.
@@ -17,6 +17,7 @@ temperatures and boots straight into a small Alpine Linux userspace, all without
 | USB | Device mode (mtu3 + xsphy, forced VBUS): CDC ACM serial shell + kernel console, CDC ECM network (~42 MB/s) |
 | Userspace | Built-in initramfs: busybox, login prompt on the panel, telnet over USB, fastfetch, `pacman-dash` dashboard |
 | Alpine | Boots straight into Alpine Linux 3.24 aarch64 (it replaces Android's ramdisk in `vendor_boot`); runs from RAM |
+| Keys | Power + volume up from the MT6363 PMIC over SPMI (polled) |
 | Thermal | CPU0-7 + GPU temperatures from the MCUPM firmware, critical trip at 95 °C (power off) |
 | Reboot | `pacman-reboot bootloader` reboots straight into fastboot |
 | Not yet | Clocks, pinctrl, PMIC (MT6363/MT6368, SPMI), regulators, UFS storage, touchscreen, keys, battery/charging, Wi-Fi, GPU |
@@ -50,7 +51,7 @@ The tools assume this layout under `~/pacman` (override with `PACMAN=...` where 
 
 ```
 ~/pacman/
-├── linux/    mainline tree + kernel-patches/ applied (branch "pacman")
+├── linux/    v7.3.3 + kernel-patches/ applied (branch "pacman-7.3")
 ├── port/     this repository
 ├── stock/    your own backups of the stock partitions (never published)
 ├── work/     vendor_boot repack area (vb/, vb_args.txt from unpack_bootimg)
@@ -61,7 +62,7 @@ This repository:
 
 | Path | What |
 |---|---|
-| `kernel-patches/` | Kernel changes on top of mainline `fa4ad798f` (7.4-rc1), apply with `git am` |
+| `kernel-patches/` | Kernel changes on top of stable `v7.3.3`, apply with `git am` |
 | `pacman.config` | Kernel config fragment (merge on top of arm64 `defconfig`) |
 | `drivers/`, `arch/` | Copies of our drivers and the (not yet booting) clean DTS |
 | `hybrid/` | Device trees in use: `test-U.dts` = stock DTB + display + USB peripheral; `.img` = DT-table-wrapped |
@@ -73,8 +74,8 @@ This repository:
 
 ```bash
 # kernel
-git clone https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git ~/pacman/linux
-cd ~/pacman/linux && git checkout -b pacman fa4ad798f && git am ../port/kernel-patches/*.patch
+git clone --depth 1 --branch v7.3.3 https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git ~/pacman/linux
+cd ~/pacman/linux && git switch -c pacman-7.3 && git am ../port/kernel-patches/*.patch
 
 # userspace for the built-in initramfs
 make -C ~/pacman/port/ui                      # pacman-dash, pacman-reboot (aarch64, static)

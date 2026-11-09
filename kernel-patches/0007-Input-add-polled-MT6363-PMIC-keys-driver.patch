@@ -1,0 +1,190 @@
+From 8089dcf0674b6d4121f27fcab274012a8f84c264 Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 19:53:41 +0300
+Subject: [PATCH 7/8] Input: add polled MT6363 PMIC keys driver
+
+Mainline has no core (MFD/interrupt) driver for the MediaTek MT6363 PMIC
+yet, so read the power and home keys by polling the debounced status in
+TOPSTATUS over SPMI while the input device is open. The driver binds the
+"mediatek,mt6363" SPMI device directly, checks the chip id and only ever
+reads from the PMIC.
+
+Bring-up stop-gap for MT6886 (Nothing Phone (2a)), where the home key is
+volume up; to be replaced by mtk-pmic-keys once an MT6363 core exists.
+
+Tested: KEY_POWER and KEY_VOLUMEUP press/release events with evtest.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/input/keyboard/Kconfig              |  12 ++
+ drivers/input/keyboard/Makefile             |   1 +
+ drivers/input/keyboard/mt6363-keys-polled.c | 122 ++++++++++++++++++++
+ 3 files changed, 135 insertions(+)
+ create mode 100644 drivers/input/keyboard/mt6363-keys-polled.c
+
+diff --git a/drivers/input/keyboard/Kconfig b/drivers/input/keyboard/Kconfig
+index d8c64f333..45b18c181 100644
+--- a/drivers/input/keyboard/Kconfig
++++ b/drivers/input/keyboard/Kconfig
+@@ -749,6 +749,18 @@ config KEYBOARD_MT6779
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called mt6779-keypad.
+ 
++config KEYBOARD_MT6363_POLLED
++	tristate "MediaTek MT6363 PMIC keys (polled)"
++	depends on SPMI
++	select REGMAP_SPMI
++	help
++	  Say Y here to read the power and home keys of the MediaTek MT6363
++	  PMIC by polling its key status over SPMI. Stop-gap until an MT6363
++	  core driver with interrupt support exists.
++
++	  To compile this driver as a module, choose M here: the
++	  module will be called mt6363-keys-polled.
++
+ config KEYBOARD_MTK_PMIC
+ 	tristate "MediaTek PMIC keys support"
+ 	depends on MFD_MT6397 || COMPILE_TEST
+diff --git a/drivers/input/keyboard/Makefile b/drivers/input/keyboard/Makefile
+index 60bb7baf8..96dfc8a0f 100644
+--- a/drivers/input/keyboard/Makefile
++++ b/drivers/input/keyboard/Makefile
+@@ -45,6 +45,7 @@ obj-$(CONFIG_KEYBOARD_MAX7359)		+= max7359_keypad.o
+ obj-$(CONFIG_KEYBOARD_MAX7360)		+= max7360-keypad.o
+ obj-$(CONFIG_KEYBOARD_MPR121)		+= mpr121_touchkey.o
+ obj-$(CONFIG_KEYBOARD_MT6779)		+= mt6779-keypad.o
++obj-$(CONFIG_KEYBOARD_MT6363_POLLED)	+= mt6363-keys-polled.o
+ obj-$(CONFIG_KEYBOARD_MTK_PMIC) 	+= mtk-pmic-keys.o
+ obj-$(CONFIG_KEYBOARD_NEWTON)		+= newtonkbd.o
+ obj-$(CONFIG_KEYBOARD_NSPIRE)		+= nspire-keypad.o
+diff --git a/drivers/input/keyboard/mt6363-keys-polled.c b/drivers/input/keyboard/mt6363-keys-polled.c
+new file mode 100644
+index 000000000..9a09fc6d8
+--- /dev/null
++++ b/drivers/input/keyboard/mt6363-keys-polled.c
+@@ -0,0 +1,122 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Power and home keys of the MediaTek MT6363 PMIC on SPMI, polled.
++ *
++ * Mainline has no MT6363 core (MFD + interrupt controller) driver yet, so
++ * instead of PMIC interrupts this reads the debounced key status in
++ * TOPSTATUS while the input device is open. It only ever reads from the
++ * PMIC. Bring-up driver for MT6886 (Nothing Phone (2a)): it binds the
++ * "mediatek,mt6363" SPMI device directly and must give way to a real
++ * MT6363 core driver once one exists.
++ */
++
++#include <linux/bits.h>
++#include <linux/input.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/regmap.h>
++#include <linux/spmi.h>
++
++#define MT6363_SWCID		0x000b
++#define MT6363_TOPSTATUS	0x001e
++#define MT6363_CHIP_ID		0x63
++
++#define MT6363_KEYS_POLL_MS	20
++
++/* TOPSTATUS: debounced key state, the bit is clear while the key is pressed */
++static const struct {
++	u32 mask;
++	unsigned int code;
++} mt6363_keys[] = {
++	{ BIT(1), KEY_POWER },		/* power key */
++	{ BIT(3), KEY_VOLUMEUP },	/* "home" key, volume up on this phone */
++};
++
++struct mt6363_keys {
++	struct regmap *map;
++	struct input_dev *input;
++};
++
++static void mt6363_keys_poll(struct input_dev *input)
++{
++	struct mt6363_keys *k = input_get_drvdata(input);
++	unsigned int val;
++	int i;
++
++	if (regmap_read(k->map, MT6363_TOPSTATUS, &val))
++		return;
++
++	for (i = 0; i < ARRAY_SIZE(mt6363_keys); i++)
++		input_report_key(input, mt6363_keys[i].code, !(val & mt6363_keys[i].mask));
++	input_sync(input);
++}
++
++static const struct regmap_config mt6363_keys_regmap_config = {
++	.reg_bits	= 16,
++	.val_bits	= 8,
++	.max_register	= 0x0fff,
++};
++
++static int mt6363_keys_probe(struct spmi_device *sdev)
++{
++	struct device *dev = &sdev->dev;
++	struct mt6363_keys *k;
++	unsigned int id, status;
++	int i, ret;
++
++	k = devm_kzalloc(dev, sizeof(*k), GFP_KERNEL);
++	if (!k)
++		return -ENOMEM;
++
++	k->map = devm_regmap_init_spmi_ext(sdev, &mt6363_keys_regmap_config);
++	if (IS_ERR(k->map))
++		return dev_err_probe(dev, PTR_ERR(k->map), "cannot create regmap\n");
++
++	ret = regmap_read(k->map, MT6363_SWCID, &id);
++	if (ret)
++		return dev_err_probe(dev, ret, "cannot read chip id over SPMI\n");
++	if (id != MT6363_CHIP_ID)
++		return dev_err_probe(dev, -ENODEV, "unexpected chip id 0x%02x\n", id);
++
++	ret = regmap_read(k->map, MT6363_TOPSTATUS, &status);
++	if (ret)
++		return dev_err_probe(dev, ret, "cannot read TOPSTATUS\n");
++	dev_info(dev, "MT6363 (chip id 0x%02x) on SPMI usid %u, TOPSTATUS 0x%02x\n",
++		 id, sdev->usid, status);
++
++	k->input = devm_input_allocate_device(dev);
++	if (!k->input)
++		return -ENOMEM;
++
++	k->input->name = "mt6363-keys";
++	k->input->phys = "mt6363-keys/input0";
++	k->input->id.bustype = BUS_HOST;
++	input_set_drvdata(k->input, k);
++	for (i = 0; i < ARRAY_SIZE(mt6363_keys); i++)
++		input_set_capability(k->input, EV_KEY, mt6363_keys[i].code);
++
++	ret = input_setup_polling(k->input, mt6363_keys_poll);
++	if (ret)
++		return ret;
++	input_set_poll_interval(k->input, MT6363_KEYS_POLL_MS);
++
++	return input_register_device(k->input);
++}
++
++static const struct of_device_id mt6363_keys_of_match[] = {
++	{ .compatible = "mediatek,mt6363" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, mt6363_keys_of_match);
++
++static struct spmi_driver mt6363_keys_driver = {
++	.probe = mt6363_keys_probe,
++	.driver = {
++		.name = "mt6363-keys-polled",
++		.of_match_table = mt6363_keys_of_match,
++	},
++};
++module_spmi_driver(mt6363_keys_driver);
++
++MODULE_DESCRIPTION("MediaTek MT6363 PMIC keys (polled, SPMI)");
++MODULE_LICENSE("GPL");
+-- 
+2.56.0
+

@@ -1,0 +1,54 @@
+From 3642c83792297a431976394df9d5cc088660b239 Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 20:12:15 +0300
+Subject: [PATCH 8/8] phy: mediatek: xsphy: clear U2 force bits left by the
+ bootloader
+
+Backport of the U2PHYDTM0 part of a 7.4 change: clear the FORCE_DATAIN,
+FORCE_{DM,DP}_PULLDOWN, FORCE_XCVRSEL, FORCE_SUSPENDM and FORCE_TERMSEL
+bits when initialising a U2 port.
+
+On the Nothing Phone (2a) (MT6886) LK leaves the U2 PHY forced into
+suspend/disconnect when it hands over to the kernel. With 7.3.3 the mtu3
+gadget comes up and pulls D+ but the host never sees the device; 7.4-rc1
+with this hunk enumerates fine.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/phy/mediatek/phy-mtk-xsphy.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/drivers/phy/mediatek/phy-mtk-xsphy.c b/drivers/phy/mediatek/phy-mtk-xsphy.c
+index cc1d66954..b29220bc5 100644
+--- a/drivers/phy/mediatek/phy-mtk-xsphy.c
++++ b/drivers/phy/mediatek/phy-mtk-xsphy.c
+@@ -62,6 +62,14 @@
+ #define P2A6_RG_BC11_SW_EN	BIT(23)
+ #define P2A6_RG_OTG_VBUSCMP_EN	BIT(20)
+ 
++#define XSP_U2PHYDTM0		((SSUSB_SIFSLV_U2PHY_COM) + 0x068)
++#define P2D_FORCE_DATAIN	BIT(23)
++#define P2D_FORCE_DM_PULLDOWN	BIT(21)
++#define P2D_FORCE_DP_PULLDOWN	BIT(20)
++#define P2D_FORCE_XCVRSEL	BIT(19)
++#define P2D_FORCE_SUSPENDM	BIT(18)
++#define P2D_FORCE_TERMSEL	BIT(17)
++
+ #define XSP_U2PHYDTM1		((SSUSB_SIFSLV_U2PHY_COM) + 0x06C)
+ #define P2D_FORCE_IDDIG		BIT(9)
+ #define P2D_RG_VBUSVALID	BIT(5)
+@@ -181,6 +189,11 @@ static void u2_phy_instance_init(struct mtk_xsphy *xsphy,
+ {
+ 	void __iomem *pbase = inst->port_base;
+ 
++	mtk_phy_clear_bits(pbase + XSP_U2PHYDTM0,
++			   P2D_FORCE_DATAIN | P2D_FORCE_DM_PULLDOWN |
++			   P2D_FORCE_DP_PULLDOWN | P2D_FORCE_XCVRSEL |
++			   P2D_FORCE_SUSPENDM | P2D_FORCE_TERMSEL);
++
+ 	/* DP/DM BC1.1 path Disable */
+ 	mtk_phy_clear_bits(pbase + XSP_USBPHYACR6, P2A6_RG_BC11_SW_EN);
+ 
+-- 
+2.56.0
+

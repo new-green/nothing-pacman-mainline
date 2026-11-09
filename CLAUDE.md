@@ -7,8 +7,8 @@ live in `~/pacman/CLAUDE.local.md`, which is not part of this repository.
 
 **Publishing:** this repo is pushed to GitHub (`new-green/nothing-pacman-mainline`). Everything
 committed must be English; local-only files are listed in `.git/info/exclude`. After changing
-kernel commits on `linux/` branch `pacman`, regenerate the series:
-`git -C ../linux format-patch -o kernel-patches fa4ad798f..pacman` (delete the old files first).
+kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
+`git -C ../linux format-patch -o kernel-patches v7.3.3..pacman-7.3` (delete the old files first).
 
 ## Safety rules (always)
 - **Ask the owner before**: `fastboot flash|erase|flashing|set_active`, `dd` to any block device,
@@ -37,16 +37,26 @@ kernel commits on `linux/` branch `pacman`, regenerate the series:
 ## What works (2026-11-09)
 | Area | State |
 |---|---|
-| Kernel | mainline 7.4-rc1 + our patches, slim config (MediaTek only), 8 CPUs, GICv3, timer, PSCI, mtk-wdt, ramoops |
+| Kernel | stable 7.3.3 + our patches (branch `pacman-7.3`; old 7.4-rc1 branch `pacman` kept), slim config (MediaTek only), 8 CPUs, GICv3, timer, PSCI, mtk-wdt, ramoops |
 | Display | `pacman-cmdfb` fbdev on LK's framebuffer, fbcon, mmap; hides LK's Orange State layer |
 | USB | mtu3 peripheral + xsphy u2, `force-vbus`; g_cdc = ACM (ttyGS0) + ECM network (usb0), 42 MB/s PC->phone |
 | Shell | busybox root shell on ttyGS0 (PC: /dev/ttyACM0), kernel console on ttyGS0 |
 | Thermal | `mtk_therm_intf`: cpu0..7 + gpu zones from MCUPM firmware SRAM, critical 95 °C |
 | Reboot | `pacman-reboot bootloader` -> LK fastboot (no key combo needed) |
+| SPMI/PMIC | mainline `spmi-mtk-pmif` with MT8195 data reads the MT6363 (chip id 0x63) |
+| Keys | power + volume up via MT6363 TOPSTATUS, polled (`mt6363-keys-polled`), `/dev/input/event0` |
 | UI | boot log on fbcon, then `pacman login:` on tty1 (type from the PC: `conspy 1`); `pacman-dash` on demand |
-| Missing | clocks, pinctrl, PMIC (SPMI), regulators, UFS, input (touch/keys), battery, Wi-Fi, GPU |
+| Missing | clocks, pinctrl (volume down), PMIC core/IRQs, regulators, UFS, touch, battery, Wi-Fi, GPU |
+| **OPEN BUG** | spontaneous resets after ~1.5-5 min since 2026-11-09 evening: MT6363 **self watchdog** (see below) |
 
 **Images** (`out/`):
+- `pacman-733-boot.img` + `pacman-keys-vendor_boot.img` — newest **known-good** kernel: 7.3.3 stable,
+  all features (display, USB net/serial, thermal, reboot, SPMI keys) + STRICT_DEVMEM off (debug).
+  7.3.3 needed a backport of the 7.4 xsphy fix that clears the U2PHYDTM0 FORCE_* bits LK leaves set
+  (without it the gadget pulls D+ but the host never sees it).
+- `pacman-keys-boot.img` + `pacman-keys-vendor_boot.img` (DTB `test-P`): stage 2 keys. Boots, keys work,
+  but hit the reset bug. `pacman-dbg-boot.img` = same kernel without STRICT_DEVMEM (debug);
+  `pacman-ctrl-vendor_boot.img` = Alpine + `test-U` (SPMI off) for control runs.
 - `pacman-alpine-boot.img` + `pacman-alpine-vendor_boot.img` — newest **known-good** (2026-11-09):
   boots straight into Alpine 3.24 (Alpine replaces Android's platform ramdisk fragment in
   vendor_boot, `tools/build-vendor-boot.sh`); login on tty1, USB net/serial, thermal, reboot.
@@ -81,9 +91,11 @@ kernel commits on `linux/` branch `pacman`, regenerate the series:
 - **Before every flash check the kernel size** (see LK rules). Name new images, don't overwrite known-good ones.
 
 ## Layout (~/pacman)
-- `linux/` mainline, branch `pacman`: DTS + cmdfb, cmdfb mmap, mtu3 force-vbus, mtk_therm_intf.
+- `linux/` shallow clone; branch `pacman-7.3` = v7.3.3 (stable, fetched with --depth 1) + our 7 commits:
+  DTS + cmdfb, cmdfb mmap, mtu3 force-vbus, mtk_therm_intf, cmdfb hide LK layers, SPMI MT6886,
+  MT6363 polled keys. Old branch `pacman` = same on 7.4-rc1 (fa4ad798f).
   `linux/pacman.config` is a stale untracked copy — the real fragment is `port/pacman.config`.
-- `port/` (git, master): `pacman.config`, `kernel-patches/` (git am series on mainline `fa4ad798f`),
+- `port/` (git, master): `pacman.config`, `kernel-patches/` (git am series on stable `v7.3.3`),
   `drivers/` (copies of our drivers), `LICENSE` (GPL-2.0),
   `hybrid/` (DTB sources: test-H = stock + display node, **test-U = test-H + USB peripheral**),
   `ui/` (pacman-init.sh, initramfs.list, pacman-dash.c, pacman-reboot.c, os-release, udhcpd.conf),
@@ -157,6 +169,37 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   all optional libs off), pacman-dash, pacman-reboot. `/pacman/etc`: os-release, udhcpd.conf.
 - cmdline: `console=ttyGS0,115200 console=tty0` (tty0 last = /dev/console), ramoops params, panic=5.
 
+## Stage 2: SPMI + MT6363 keys (2026-11-09, works; see OPEN BUG)
+- PMIF/SPMI-master register layout of MT6886 (downstream `mt6xxx_regs` + `mt6853_spmi_regs`) == mainline
+  `mt8195_regs`/`mt8195_spmi_regs`; AP uses SW interface channel 2 in both (downstream ignores the DT's
+  `swinf_ch_start`). Kernel: `mediatek,mt6886-spmi` -> `mt8195_pmif_arb` (spmi_ver 1: no IRQ setup, the
+  probe writes nothing). LK leaves PMIF initialised (INIT_DONE, ARB/INF_EN 0x5ffdf, MST_REQ_EN 1).
+- DTB `hybrid/test-P.dts` = test-U + spmi node: clocks = 3x clk26m (0x42) "pmif_sys_ck", "pmif_tmr_ck",
+  "spmimst_clk_mux"; `interrupts-extended` removed (parent = mt6886-pinctrl 0x16, no driver -> fw_devlink
+  would block the controller forever).
+- `drivers/input/keyboard/mt6363-keys-polled.c`: binds the SPMI device "mediatek,mt6363" (usid 4),
+  regmap_spmi_ext (16-bit reg, 8-bit val), checks SWCID (0x0b) == 0x63, polls TOPSTATUS (0x1e) every
+  20 ms while the input device is open: bit1 power, bit3 "home" = KEY_VOLUMEUP; bit clear = pressed.
+  Read-only. Mainline has no MT6363 MFD/IRQ driver yet (only regulator + auxadc). Volume down is not on
+  the PMIC (GPIO -> needs pinctrl).
+- Test: Alpine has `evtest`; evtest output piped into /dev/kmsg survives resets via ramoops.
+
+## OPEN BUG: spontaneous resets (MT6363 self watchdog), found 2026-11-09
+- Silent resets 96-315 s after boot: no oops/panic, no thermal/critical message (console loglevel 8),
+  kernel log just stops. Happened with the keys image with AND without key polling, and with the same
+  kernel + test-U DTB where SPMI never probes -> NOT caused by our SPMI/keys code.
+- LK's log of the boot after such a reset (vs a normal boot): `[PMIC]SELFWDT=0x41` (normal 0x0),
+  PONSTS 0x0 (normal 0x14), POFFSTS 0x10 (normal 0x20), `[RGU] STA 0x0` (not the AP watchdog).
+  -> the MT6363 PMIC's own watchdog resets the system. Who must feed it (SSPM/SPM firmware? a HW
+  signal?) is unknown; no downstream kernel driver touches it.
+- Earlier the same day images ran 15 min without resets. Next step: bisect — boot an older image
+  (pacman-login-boot.img + pacman-usb1-vendor_boot.img, stock Android ramdisk) and wait 10 min.
+- Reading LK's log from mainline: needs `# CONFIG_STRICT_DEVMEM is not set` (DEBUG block in
+  pacman.config, revert later), then on the phone:
+  `dd if=/dev/mem bs=4096 skip=$((0x33ffb0000/4096)) count=64 | strings | grep -E "RGU|PMIC|SELFWDT"`
+  (mblock-10-log_store, 256 KiB at 0x33ffb0000, contains preloader+LK log of the current boot).
+- Normal-boot reference: logs/pl_lk.txt (stock, SELFWDT=0x0).
+
 ## Alpine as root filesystem (stage 4, WORKS 2026-11-09)
 - `tools/build-vendor-boot.sh [dtb]`: gzip newc cpio of `~/pacman/alpine/rootfs` (root-owned) replaces
   fragment 00 (type platform) of the stock vendor_boot via `work/vb_args.txt`; fragment 01 (recovery)
@@ -197,7 +240,7 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   non-interactive init script.
 - Non-English locales may use a decimal comma: `printf %f` with dots fails in bash -> use `LC_ALL=C`.
 
-## Roadmap (agreed with owner: "real Linux desktop")
+## Roadmap (agreed with owner: "real Linux desktop"; owner chose "native" first: boot without PC)
 1. Done: USB network (verified: DHCP, ping, telnet port, 200 MB at 42 MB/s md5-checked).
    Orange State found and removed (live); boot `pacman-ovl-boot.img` to confirm the driver version.
 2. Alpine in RAM: tooling built (see Alpine section) -> test on the phone.
