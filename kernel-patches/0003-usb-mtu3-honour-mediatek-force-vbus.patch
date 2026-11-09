@@ -1,7 +1,7 @@
-From 6af5c96ded72814bfeae5097097d8440669d3542 Mon Sep 17 00:00:00 2001
+From ce9361ff72b67c716608d249520d755ea7033f07 Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 13:18:16 +0300
-Subject: [PATCH] usb: mtu3: honour mediatek,force-vbus
+Subject: [PATCH 3/5] usb: mtu3: honour mediatek,force-vbus
 
 On some boards VBUS is sensed by a charger IC rather than the SSUSB IP,
 so the device MAC never sees VBUS-valid and the gadget, although it

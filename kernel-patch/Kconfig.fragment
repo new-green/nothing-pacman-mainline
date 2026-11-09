@@ -1,9 +1,0 @@
-
-config FB_PACMAN_CMD
-	bool "Nothing Phone (2a) command-mode panel framebuffer (bring-up)"
-	depends on FB=y && ARM64
-	select FB_SYSMEM_HELPERS
-	help
-	  Framebuffer on the display pipeline the bootloader leaves running
-	  on the Nothing Phone (2a), for a DSI command-mode panel. Periodically
-	  pushes frames to the panel. Bring-up aid only.

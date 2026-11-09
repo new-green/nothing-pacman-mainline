@@ -1,0 +1,1059 @@
+From fefc67a5e1a155541f81e160a09f24bd2b968bf2 Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 00:15:21 +0300
+Subject: [PATCH 1/5] Nothing Phone (2a): MT6886 DTS and command-mode panel
+ framebuffer
+
+---
+ arch/arm64/boot/dts/mediatek/Makefile         |   2 +
+ .../mt6886-nothing-pacman-overlay-sink.dtsi   | 256 ++++++++++++++
+ .../dts/mediatek/mt6886-nothing-pacman.dts    | 320 ++++++++++++++++++
+ arch/arm64/boot/dts/mediatek/mt6886.dtsi      | 161 +++++++++
+ drivers/video/fbdev/Kconfig                   |   9 +
+ drivers/video/fbdev/Makefile                  |   1 +
+ drivers/video/fbdev/pacman-cmdfb.c            | 239 +++++++++++++
+ 7 files changed, 988 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/mediatek/mt6886-nothing-pacman-overlay-sink.dtsi
+ create mode 100644 arch/arm64/boot/dts/mediatek/mt6886-nothing-pacman.dts
+ create mode 100644 arch/arm64/boot/dts/mediatek/mt6886.dtsi
+ create mode 100644 drivers/video/fbdev/pacman-cmdfb.c
+
+diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek/Makefile
+index a86fb313b..027df0788 100644
+--- a/arch/arm64/boot/dts/mediatek/Makefile
++++ b/arch/arm64/boot/dts/mediatek/Makefile
+@@ -188,3 +188,5 @@ DTC_FLAGS_mt7988a-bananapi-bpi-r4-2g5 := -@
+ DTC_FLAGS_mt7988a-bananapi-bpi-r4-pro-4e := -@
+ DTC_FLAGS_mt7988a-bananapi-bpi-r4-pro-8x := -@
+ DTC_FLAGS_mt8395-radxa-nio-12l := -@
++dtb-$(CONFIG_ARCH_MEDIATEK) += mt6886-nothing-pacman.dtb
++DTC_FLAGS_mt6886-nothing-pacman := -@
+diff --git a/arch/arm64/boot/dts/mediatek/mt6886-nothing-pacman-overlay-sink.dtsi b/arch/arm64/boot/dts/mediatek/mt6886-nothing-pacman-overlay-sink.dtsi
+new file mode 100644
+index 000000000..35e700541
+--- /dev/null
++++ b/arch/arm64/boot/dts/mediatek/mt6886-nothing-pacman-overlay-sink.dtsi
+@@ -0,0 +1,256 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * The bootloader applies Nothing's DT overlay (dtbo partition, entry 0)
++ * on top of this DTB before starting the kernel. The overlay references
++ * these labels; if any is missing the overlay fails and the bootloader
++ * never starts the kernel. They are empty, disabled placeholders: the
++ * properties the overlay adds land here and are ignored by the kernel.
++ * (/chosen is labelled in the board DTS.) Build with dtc -@.
++ */
++
++/ {
++	overlay-sink {
++		status = "disabled";
++
++		mtk_leds: mtk-leds {
++			status = "disabled";
++		};
++
++		connfem: connfem {
++			status = "disabled";
++		};
++
++		pio: pio {
++			status = "disabled";
++		};
++
++		mtkfb: mtkfb {
++			status = "disabled";
++		};
++
++		dispsys_config: dispsys-config {
++			status = "disabled";
++		};
++
++		dsi0: dsi0 {
++			status = "disabled";
++		};
++
++		gps: gps {
++			status = "disabled";
++		};
++
++		ps5169: ps5169 {
++			status = "disabled";
++		};
++
++		fusb304: fusb304 {
++			status = "disabled";
++		};
++
++		mt6375_typec: mt6375-typec {
++			status = "disabled";
++		};
++
++		typec_mux_switch: typec-mux-switch {
++			status = "disabled";
++		};
++
++		i2c7: i2c7 {
++			status = "disabled";
++		};
++
++		i2c3: i2c3 {
++			status = "disabled";
++		};
++
++		i2c6: i2c6 {
++			status = "disabled";
++		};
++
++		sound: sound {
++			status = "disabled";
++		};
++
++		snd_audio_dsp: snd-audio-dsp {
++			status = "disabled";
++		};
++
++		i2c8: i2c8 {
++			status = "disabled";
++		};
++
++		pdc: pdc {
++			status = "disabled";
++		};
++
++		spi1: spi1 {
++			status = "disabled";
++		};
++
++		goodix_fp: goodix-fp {
++			status = "disabled";
++		};
++
++		mt6368_vfp: mt6368-vfp {
++			status = "disabled";
++		};
++
++		spi4: spi4 {
++			status = "disabled";
++		};
++
++		mobicore: mobicore {
++			status = "disabled";
++		};
++
++		mtkheap_page_svp: mtkheap-page-svp {
++			status = "disabled";
++		};
++
++		mtkheap_region_svp: mtkheap-region-svp {
++			status = "disabled";
++		};
++
++		mtee_svp: mtee-svp {
++			status = "disabled";
++		};
++
++		pe5: pe5 {
++			status = "disabled";
++		};
++
++		charger: charger {
++			status = "disabled";
++		};
++
++		nt_chg: nt-chg {
++			status = "disabled";
++		};
++
++		extcon_usb: extcon-usb {
++			status = "disabled";
++		};
++
++		nofem: nofem {
++			status = "disabled";
++		};
++
++		wlan7207h: wlan7207h {
++			status = "disabled";
++		};
++
++		wlan7207c: wlan7207c {
++			status = "disabled";
++		};
++
++		qm42195: qm42195 {
++			status = "disabled";
++		};
++
++		qm45197: qm45197 {
++			status = "disabled";
++		};
++
++		spi3: spi3 {
++			status = "disabled";
++		};
++
++		mt6368_vtp: mt6368-vtp {
++			status = "disabled";
++		};
++
++		seninf_top: seninf-top {
++			status = "disabled";
++		};
++
++		csi_efuse0: csi-efuse0 {
++			status = "disabled";
++		};
++
++		csi_efuse1: csi-efuse1 {
++			status = "disabled";
++		};
++
++		csi_efuse2: csi-efuse2 {
++			status = "disabled";
++		};
++
++		mtk_composite_v4l2_2: mtk-composite-v4l2-2 {
++			status = "disabled";
++		};
++
++		i2c4: i2c4 {
++			status = "disabled";
++		};
++
++		i2c2: i2c2 {
++			status = "disabled";
++		};
++
++		wl2868c_ldo6: wl2868c-ldo6 {
++			status = "disabled";
++		};
++
++		wl2868c_ldo2: wl2868c-ldo2 {
++			status = "disabled";
++		};
++
++		topckgen_clk: topckgen-clk {
++			status = "disabled";
++		};
++
++		i2c9: i2c9 {
++			status = "disabled";
++		};
++
++		mtk_composite_v4l2_1: mtk-composite-v4l2-1 {
++			status = "disabled";
++		};
++
++		thermal_zones: thermal-zones {
++			status = "disabled";
++		};
++
++		gpio_usage_mapping: gpio-usage-mapping {
++			status = "disabled";
++		};
++
++		gpio: gpio {
++			status = "disabled";
++		};
++
++		dsi_te: dsi-te {
++			status = "disabled";
++		};
++
++		touch: touch {
++			status = "disabled";
++		};
++
++		smart_pa: smart-pa {
++			status = "disabled";
++		};
++
++		subpmic_pmu_eint: subpmic-pmu-eint {
++			status = "disabled";
++		};
++
++		rt5133_eint: rt5133-eint {
++			status = "disabled";
++		};
++
++		md1_sim1_hot_plug_eint: md1-sim1-hot-plug-eint {
++			status = "disabled";
++		};
++
++		md1_sim2_hot_plug_eint: md1-sim2-hot-plug-eint {
++			status = "disabled";
++		};
++
++		keypad: keypad {
++			status = "disabled";
++		};
++
++	};
++};
+diff --git a/arch/arm64/boot/dts/mediatek/mt6886-nothing-pacman.dts b/arch/arm64/boot/dts/mediatek/mt6886-nothing-pacman.dts
+new file mode 100644
+index 000000000..36311547f
+--- /dev/null
++++ b/arch/arm64/boot/dts/mediatek/mt6886-nothing-pacman.dts
+@@ -0,0 +1,320 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Nothing Phone (2a) "Pacman" - minimal mainline boot.
++ *
++ * Memory map and reserved regions copied from the DTB the bootloader (LK)
++ * passes to the stock kernel (/sys/firmware/fdt on a running device).
++ *
++ * Framebuffer: atag,videolfb-fb_base = 0xfe050000. The panel is a DSI
++ * command-mode panel, so writes to this buffer only reach the screen
++ * when the display engine pushes a frame; simple-framebuffer alone
++ * will not show anything yet.
++ */
++
++/dts-v1/;
++
++#include "mt6886.dtsi"
++#include "mt6886-nothing-pacman-overlay-sink.dtsi"
++
++#define FB_BASE		0xfe050000
++#define FB_WIDTH	1080
++#define FB_HEIGHT	2412
++#define FB_STRIDE	(1088 * 4)
++#define FB_SIZE		0x01fa0000
++
++/ {
++	model = "Nothing Phone (2a)";
++	/* Exactly as in the stock DTB; the bootloader may match on it */
++	compatible = "mediatek,MT6886";
++
++	aliases {
++		serial0 = &uart0;
++	};
++
++	chosen: chosen {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		/* The kernel uses its built-in command line (CONFIG_CMDLINE_FORCE) */
++		bootargs = "console=tty0";
++
++		framebuffer0: framebuffer@fe050000 {
++			compatible = "simple-framebuffer";
++			reg = <0 FB_BASE 0 FB_SIZE>;
++			width = <FB_WIDTH>;
++			height = <FB_HEIGHT>;
++			stride = <FB_STRIDE>;
++			format = "a8r8g8b8";
++		};
++	};
++
++	/* 12 GB, as reported by the bootloader */
++	memory {
++		device_type = "memory";
++		reg = <0x0 0x40000000 0x3 0x00000000>;
++	};
++
++	reserved-memory {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		/* pstore: configured on the command line (ramoops.*), same as stock */
++		pstore@48090000 {
++			reg = <0x0 0x48090000 0x0 0x000e0000>;
++			no-map;
++		};
++
++		framebuffer@fe050000 {
++			reg = <0 FB_BASE 0 FB_SIZE>;
++			no-map;
++		};
++
++		aee-debug-kinfo@48080000 {
++			reg = <0x0 0x48080000 0x0 0x00010000>;
++			no-map;
++		};
++
++		minirdump@48170000 {
++			reg = <0x0 0x48170000 0x0 0x00010000>;
++			no-map;
++		};
++
++		bl31-reserved@48200000 {
++			reg = <0x0 0x48200000 0x0 0x00200000>;
++			no-map;
++		};
++
++		crypto-hw@48410000 {
++			reg = <0x0 0x48410000 0x0 0x00010000>;
++			no-map;
++		};
++
++		aee-lk@50700000 {
++			reg = <0x0 0x50700000 0x0 0x00800000>;
++		};
++
++		adsp-image-reserved@7e000000 {
++			reg = <0x0 0x7e000000 0x0 0x00920000>;
++			no-map;
++		};
++
++		sspm-ap-shared@7f9d0000 {
++			reg = <0x0 0x7f9d0000 0x0 0x00110000>;
++			no-map;
++		};
++
++		me-gpueb-shared@7fae0000 {
++			reg = <0x0 0x7fae0000 0x0 0x00180000>;
++			no-map;
++		};
++
++		me-csffwlog-reserved@7fc60000 {
++			reg = <0x0 0x7fc60000 0x0 0x00010000>;
++			no-map;
++		};
++
++		mcupm-reserved@7fc70000 {
++			reg = <0x0 0x7fc70000 0x0 0x00100000>;
++			no-map;
++		};
++
++		sspm-reserved@7fd70000 {
++			reg = <0x0 0x7fd70000 0x0 0x00280000>;
++			no-map;
++		};
++
++		emi-mbist-buf@7fff0000 {
++			reg = <0x0 0x7fff0000 0x0 0x00010000>;
++			no-map;
++		};
++
++		mm-ccu-reserved@80000000 {
++			reg = <0x0 0x80000000 0x0 0x00100000>;
++			no-map;
++		};
++
++		consys-emi-reserved@85e00000 {
++			reg = <0x0 0x85e00000 0x0 0x00d00000>;
++			no-map;
++		};
++
++		shared-dma-pool-wifi-reserve-memory-dma@86b00000 {
++			reg = <0x0 0x86b00000 0x0 0x01400000>;
++			no-map;
++		};
++
++		scp-emi-reserved@87f00000 {
++			reg = <0x0 0x87f00000 0x0 0x00020000>;
++			no-map;
++		};
++
++		ap-md-c-smem@88000000 {
++			reg = <0x0 0x88000000 0x0 0x04f60000>;
++			no-map;
++		};
++
++		ap-md-nc-smem@8e000000 {
++			reg = <0x0 0x8e000000 0x0 0x00130000>;
++			no-map;
++		};
++
++		reserve-memory-scp-share@8f000000 {
++			reg = <0x0 0x8f000000 0x0 0x00530000>;
++			no-map;
++		};
++
++		apu-apusys-rv-aee-coredump@8f640000 {
++			reg = <0x0 0x8f640000 0x0 0x002c0000>;
++			no-map;
++		};
++
++		apu-apusys-rv-secure@8f900000 {
++			reg = <0x0 0x8f900000 0x0 0x00700000>;
++			no-map;
++		};
++
++		debug-met-res-ram@9f3f0000 {
++			reg = <0x0 0x9f3f0000 0x0 0x00c00000>;
++			no-map;
++		};
++
++		spm-reserved@9fff0000 {
++			reg = <0x0 0x9fff0000 0x0 0x00010000>;
++			no-map;
++		};
++
++		me-vcp-reserved@bd000000 {
++			reg = <0x0 0xbd000000 0x0 0x00800000>;
++			no-map;
++		};
++
++		apu-mvpu-algo@bd800000 {
++			reg = <0x0 0xbd800000 0x0 0x01b00000>;
++		};
++
++		scp-reserved@bf300000 {
++			reg = <0x0 0xbf300000 0x0 0x003a0000>;
++			no-map;
++		};
++
++		ccci-tag-mem@bf7f0000 {
++			reg = <0x0 0xbf7f0000 0x0 0x00010000>;
++			no-map;
++		};
++
++		tee-secmem@bf800000 {
++			reg = <0x0 0xbf800000 0x0 0x00600000>;
++			no-map;
++		};
++
++		atf-log-reserved@bfe00000 {
++			reg = <0x0 0xbfe00000 0x0 0x00200000>;
++			no-map;
++		};
++
++		md-mem-usage@d0000000 {
++			reg = <0x0 0xd0000000 0x0 0x02660000>;
++			no-map;
++		};
++
++		md-mem-usage@d3000000 {
++			reg = <0x0 0xd3000000 0x0 0x00240000>;
++			no-map;
++		};
++
++		md-mem-usage@d4000000 {
++			reg = <0x0 0xd4000000 0x0 0x088c0000>;
++			no-map;
++		};
++
++		md-mem-usage@ed6e0000 {
++			reg = <0x0 0xed6e0000 0x0 0x00920000>;
++			no-map;
++		};
++
++		adsp-shared-reserved@f2000000 {
++			reg = <0x0 0xf2000000 0x0 0x00950000>;
++			no-map;
++		};
++
++		me-gpumputab-pma@f4400000 {
++			reg = <0x0 0xf4400000 0x0 0x00800000>;
++			no-map;
++		};
++
++		platform-debug-dfdmcu-dump@f4c00000 {
++			reg = <0x0 0xf4c00000 0x0 0x00280000>;
++			no-map;
++		};
++
++		platform-debug-dfdsoc-dump@f5000000 {
++			reg = <0x0 0xf5000000 0x0 0x00200000>;
++			no-map;
++		};
++
++		tee-reserved@f5200000 {
++			reg = <0x0 0xf5200000 0x0 0x06c00000>;
++			no-map;
++		};
++
++		gz@fbe00000 {
++			reg = <0x0 0xfbe00000 0x0 0x02200000>;
++			no-map;
++		};
++
++		dramc-rk0@1bfff0000 {
++			reg = <0x1 0xbfff0000 0x0 0x00010000>;
++			no-map;
++		};
++
++		platform-mtksmmu-protpgd@323e00000 {
++			reg = <0x3 0x23e00000 0x0 0x02200000>;
++			no-map;
++		};
++
++		gz-log@327800000 {
++			reg = <0x3 0x27800000 0x0 0x00050000>;
++		};
++
++		unmap2@327a00000 {
++			reg = <0x3 0x27a00000 0x0 0x00200000>;
++			no-map;
++		};
++
++		me-gpu-reserved@327c00000 {
++			reg = <0x3 0x27c00000 0x0 0x00200000>;
++			no-map;
++		};
++
++		me-cmdq-reserved@327e00000 {
++			reg = <0x3 0x27e00000 0x0 0x00100000>;
++			no-map;
++		};
++
++		gz-ffa-mailbox@327f90000 {
++			reg = <0x3 0x27f90000 0x0 0x00010000>;
++			no-map;
++		};
++
++		me-audio-btcvsd@327fa0000 {
++			reg = <0x3 0x27fa0000 0x0 0x00010000>;
++			no-map;
++		};
++
++		security-booker-tag@327fb0000 {
++			reg = <0x3 0x27fb0000 0x0 0x18000000>;
++			no-map;
++		};
++
++		log-store@33ffb0000 {
++			reg = <0x3 0x3ffb0000 0x0 0x00040000>;
++		};
++
++		dramc-rk1@33fff0000 {
++			reg = <0x3 0x3fff0000 0x0 0x00010000>;
++			no-map;
++		};
++	};
++};
+diff --git a/arch/arm64/boot/dts/mediatek/mt6886.dtsi b/arch/arm64/boot/dts/mediatek/mt6886.dtsi
+new file mode 100644
+index 000000000..ff12922b2
+--- /dev/null
++++ b/arch/arm64/boot/dts/mediatek/mt6886.dtsi
+@@ -0,0 +1,161 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * MediaTek MT6886 (Dimensity 7200) - minimal SoC description.
++ * Only what is needed to boot to a framebuffer console:
++ * CPUs, PSCI, GICv3, arch timer, watchdog, UART.
++ *
++ * Addresses taken from Nothing's downstream mt6886.dts
++ * (NothingOSS/android_kernel_5.15_nothing_mt6886).
++ */
++
++#include <dt-bindings/interrupt-controller/arm-gic.h>
++#include <dt-bindings/interrupt-controller/irq.h>
++
++/ {
++	compatible = "mediatek,mt6886";
++	interrupt-parent = <&gic>;
++	#address-cells = <2>;
++	#size-cells = <2>;
++
++	clk26m: oscillator-26m {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <26000000>;
++		clock-output-names = "clk26m";
++	};
++
++	cpus {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		/*
++		 * Downstream DTS says a55/a78 (copied from an older template).
++		 * Dimensity 7200 is really 6x Cortex-A510 + 2x Cortex-A715;
++		 * the compatible string is not used for booting anyway.
++		 */
++		cpu0: cpu@0 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a510";
++			reg = <0x000>;
++			enable-method = "psci";
++		};
++		cpu1: cpu@1 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a510";
++			reg = <0x100>;
++			enable-method = "psci";
++		};
++		cpu2: cpu@2 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a510";
++			reg = <0x200>;
++			enable-method = "psci";
++		};
++		cpu3: cpu@3 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a510";
++			reg = <0x300>;
++			enable-method = "psci";
++		};
++		cpu4: cpu@4 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a510";
++			reg = <0x400>;
++			enable-method = "psci";
++		};
++		cpu5: cpu@5 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a510";
++			reg = <0x500>;
++			enable-method = "psci";
++		};
++		cpu6: cpu@100 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a715";
++			reg = <0x600>;
++			enable-method = "psci";
++		};
++		cpu7: cpu@101 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a715";
++			reg = <0x700>;
++			enable-method = "psci";
++		};
++
++		cpu-map {
++			cluster0 {
++				core0 { cpu = <&cpu0>; };
++				core1 { cpu = <&cpu1>; };
++				core2 { cpu = <&cpu2>; };
++				core3 { cpu = <&cpu3>; };
++				core4 { cpu = <&cpu4>; };
++				core5 { cpu = <&cpu5>; };
++				core6 { cpu = <&cpu6>; };
++				core7 { cpu = <&cpu7>; };
++			};
++		};
++	};
++
++	psci {
++		compatible = "arm,psci-1.0";
++		method = "smc";
++	};
++
++	timer {
++		compatible = "arm,armv8-timer";
++		interrupts = <GIC_PPI 13 IRQ_TYPE_LEVEL_HIGH 0>,
++			     <GIC_PPI 14 IRQ_TYPE_LEVEL_HIGH 0>,
++			     <GIC_PPI 11 IRQ_TYPE_LEVEL_HIGH 0>,
++			     <GIC_PPI 10 IRQ_TYPE_LEVEL_HIGH 0>;
++		/* Downstream sets this explicitly; firmware does not program CNTFRQ reliably */
++		clock-frequency = <13000000>;
++	};
++
++	gic: interrupt-controller {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		compatible = "arm,gic-v3";
++		#interrupt-cells = <4>;
++		#redistributor-regions = <1>;
++		interrupt-controller;
++		reg = <0 0x0c400000 0 0x40000>,	/* distributor */
++		      <0 0x0c440000 0 0x200000>;	/* redistributors */
++		interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_HIGH 0>;
++
++		ppi-partitions {
++			ppi_cluster0: interrupt-partition-0 {
++				affinity = <&cpu0 &cpu1 &cpu2 &cpu3 &cpu4 &cpu5>;
++			};
++			ppi_cluster1: interrupt-partition-1 {
++				affinity = <&cpu6 &cpu7>;
++			};
++		};
++	};
++
++	soc {
++		compatible = "simple-bus";
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++
++		uart0: serial@11001000 {
++			compatible = "mediatek,mt6886-uart", "mediatek,mt6577-uart";
++			reg = <0 0x11001000 0 0x1000>;
++			interrupts = <GIC_SPI 173 IRQ_TYPE_LEVEL_HIGH 0>;
++			/* No clock driver yet: the bootloader leaves the UART clocked */
++			clocks = <&clk26m>, <&clk26m>;
++			clock-names = "baud", "bus";
++			status = "disabled";
++		};
++
++		/*
++		 * The bootloader leaves the TOPRGU watchdog running.
++		 * Without this node the phone reboots after a few seconds.
++		 */
++		watchdog: watchdog@1c007000 {
++			compatible = "mediatek,mt6886-wdt", "mediatek,mt6589-wdt";
++			reg = <0 0x1c007000 0 0x100>;
++		};
++	};
++};
+diff --git a/drivers/video/fbdev/Kconfig b/drivers/video/fbdev/Kconfig
+index e8cd8cb76..2b7e55099 100644
+--- a/drivers/video/fbdev/Kconfig
++++ b/drivers/video/fbdev/Kconfig
+@@ -1803,3 +1803,12 @@ source "drivers/video/fbdev/omap2/Kconfig"
+ source "drivers/video/fbdev/mmp/Kconfig"
+ 
+ source "drivers/video/fbdev/core/Kconfig"
++
++config FB_PACMAN_CMD
++	bool "Nothing Phone (2a) command-mode panel framebuffer (bring-up)"
++	depends on FB=y && ARM64
++	select FB_SYSMEM_HELPERS
++	help
++	  Framebuffer on the display pipeline the bootloader leaves running
++	  on the Nothing Phone (2a), for a DSI command-mode panel. Periodically
++	  pushes frames to the panel. Bring-up aid only.
+diff --git a/drivers/video/fbdev/Makefile b/drivers/video/fbdev/Makefile
+index 0b17c8781..c8063d720 100644
+--- a/drivers/video/fbdev/Makefile
++++ b/drivers/video/fbdev/Makefile
+@@ -124,3 +124,4 @@ obj-$(CONFIG_FB_SIMPLE)           += simplefb.o
+ 
+ # the test framebuffer is last
+ obj-$(CONFIG_FB_VIRTUAL)          += vfb.o
++obj-$(CONFIG_FB_PACMAN_CMD)	+= pacman-cmdfb.o
+diff --git a/drivers/video/fbdev/pacman-cmdfb.c b/drivers/video/fbdev/pacman-cmdfb.c
+new file mode 100644
+index 000000000..942e71030
+--- /dev/null
++++ b/drivers/video/fbdev/pacman-cmdfb.c
+@@ -0,0 +1,239 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Nothing Phone (2a) "Pacman": framebuffer for the bootloader's display
++ * pipeline on a DSI command-mode panel.
++ *
++ * The bootloader (LK) sets up OVL/RDMA -> DSI0 -> panel and leaves the
++ * splash framebuffer in a reserved RAM region it marks as mapped, so
++ * simple-framebuffer cannot ioremap it. On a command-mode panel the panel
++ * also only takes a new frame when the display engine is told to send one.
++ *
++ * This driver:
++ *  - maps the framebuffer as normal (cached) memory and registers fb0,
++ *  - periodically cleans the CPU cache over it and kicks one frame out
++ *    (display mutex enable + DSI_START), the same writes MediaTek's own
++ *    driver uses for a command-mode frame,
++ *  - dumps the relevant DSI / mutex registers to the kernel log.
++ *
++ * Bring-up hack, not meant for upstream as is.
++ */
++
++#include <linux/delay.h>
++#include <linux/fb.h>
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/workqueue.h>
++#include <asm/cacheflush.h>
++
++#define DSI_START		0x00
++#define DSI_INTSTA		0x0c
++#define DSI_MODE_CTRL		0x14
++
++#define MUTEX_EN(n)		(0x20 + 0x20 * (n))
++#define MUTEX_SOF(n)		(0x2c + 0x20 * (n))
++#define MUTEX_MOD0(n)		(0x30 + 0x20 * (n))
++#define MUTEX_MAX		16
++
++#define REFRESH_MS		50
++
++struct pacman_cmdfb {
++	struct device *dev;
++	void __iomem *dsi;
++	void __iomem *mutex;
++	void *vaddr;
++	phys_addr_t paddr;
++	size_t visible;
++	int mutex_id;
++	struct fb_info *info;
++	struct delayed_work work;
++	u32 pseudo_palette[16];
++};
++
++static void pacman_cmdfb_kick(struct pacman_cmdfb *p)
++{
++	unsigned long start = (unsigned long)p->vaddr;
++
++	/* make what the CPU drew visible to the display engine */
++	dcache_clean_poc(start, start + p->visible);
++
++	if (p->mutex_id >= 0)
++		writel(1, p->mutex + MUTEX_EN(p->mutex_id));
++	writel(0, p->dsi + DSI_START);
++	writel(1, p->dsi + DSI_START);
++}
++
++static void pacman_cmdfb_work(struct work_struct *w)
++{
++	struct pacman_cmdfb *p = container_of(to_delayed_work(w),
++					      struct pacman_cmdfb, work);
++
++	pacman_cmdfb_kick(p);
++	schedule_delayed_work(&p->work, msecs_to_jiffies(REFRESH_MS));
++}
++
++static int pacman_cmdfb_setcolreg(unsigned int regno, unsigned int red,
++				  unsigned int green, unsigned int blue,
++				  unsigned int transp, struct fb_info *info)
++{
++	u32 *pal = info->pseudo_palette;
++
++	if (regno >= 16)
++		return -EINVAL;
++
++	pal[regno] = 0xff000000 |
++		     ((red >> 8) << info->var.red.offset) |
++		     ((green >> 8) << info->var.green.offset) |
++		     ((blue >> 8) << info->var.blue.offset);
++	return 0;
++}
++
++static const struct fb_ops pacman_cmdfb_ops = {
++	.owner		= THIS_MODULE,
++	.fb_read	= fb_sys_read,
++	.fb_write	= fb_sys_write,
++	.fb_fillrect	= sys_fillrect,
++	.fb_copyarea	= sys_copyarea,
++	.fb_imageblit	= sys_imageblit,
++	.fb_setcolreg	= pacman_cmdfb_setcolreg,
++};
++
++static void pacman_cmdfb_dump(struct pacman_cmdfb *p)
++{
++	int i;
++
++	dev_info(p->dev, "DSI: START=%08x INTSTA=%08x MODE_CTRL=%08x (0 = command mode)\n",
++		 readl(p->dsi + DSI_START), readl(p->dsi + DSI_INTSTA),
++		 readl(p->dsi + DSI_MODE_CTRL));
++
++	p->mutex_id = -1;
++	for (i = 0; i < MUTEX_MAX; i++) {
++		u32 en = readl(p->mutex + MUTEX_EN(i));
++		u32 sof = readl(p->mutex + MUTEX_SOF(i));
++		u32 mod = readl(p->mutex + MUTEX_MOD0(i));
++
++		if (en || sof || mod)
++			dev_info(p->dev, "mutex%d: EN=%08x SOF=%08x MOD0=%08x\n",
++				 i, en, sof, mod);
++		if (p->mutex_id < 0 && mod)
++			p->mutex_id = i;
++	}
++	dev_info(p->dev, "using mutex %d\n", p->mutex_id);
++}
++
++static int pacman_cmdfb_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct device_node *np = dev->of_node;
++	struct pacman_cmdfb *p;
++	struct fb_info *info;
++	struct resource *res;
++	u32 width, height, stride;
++	int ret;
++
++	if (of_property_read_u32(np, "width", &width) ||
++	    of_property_read_u32(np, "height", &height) ||
++	    of_property_read_u32(np, "stride", &stride))
++		return dev_err_probe(dev, -EINVAL, "width/height/stride missing\n");
++
++	info = framebuffer_alloc(sizeof(*p), dev);
++	if (!info)
++		return -ENOMEM;
++	p = info->par;
++	p->dev = dev;
++	p->info = info;
++
++	/* regs: 0 = DSI0, 1 = display mutex, 2 = framebuffer */
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	p->dsi = res ? devm_ioremap(dev, res->start, resource_size(res)) : NULL;
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
++	p->mutex = res ? devm_ioremap(dev, res->start, resource_size(res)) : NULL;
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 2);
++	if (!p->dsi || !p->mutex || !res) {
++		ret = dev_err_probe(dev, -EINVAL, "missing reg entries\n");
++		goto err_release;
++	}
++
++	p->paddr = res->start;
++	p->visible = (size_t)stride * height;
++	if (p->visible > resource_size(res)) {
++		ret = dev_err_probe(dev, -EINVAL, "framebuffer region too small\n");
++		goto err_release;
++	}
++
++	/* The region is ordinary mapped RAM: use the linear map, not ioremap */
++	p->vaddr = devm_memremap(dev, res->start, resource_size(res), MEMREMAP_WB);
++	if (IS_ERR(p->vaddr)) {
++		ret = dev_err_probe(dev, PTR_ERR(p->vaddr), "cannot map framebuffer\n");
++		goto err_release;
++	}
++
++	pacman_cmdfb_dump(p);
++
++	strscpy(info->fix.id, "pacman-cmdfb", sizeof(info->fix.id));
++	info->fix.type = FB_TYPE_PACKED_PIXELS;
++	info->fix.visual = FB_VISUAL_TRUECOLOR;
++	info->fix.smem_start = p->paddr;
++	info->fix.smem_len = p->visible;
++	info->fix.line_length = stride;
++
++	info->var.xres = width;
++	info->var.yres = height;
++	info->var.xres_virtual = width;
++	info->var.yres_virtual = height;
++	info->var.bits_per_pixel = 32;
++	info->var.transp = (struct fb_bitfield){ 24, 8, 0 };
++	info->var.red = (struct fb_bitfield){ 16, 8, 0 };
++	info->var.green = (struct fb_bitfield){ 8, 8, 0 };
++	info->var.blue = (struct fb_bitfield){ 0, 8, 0 };
++	info->var.activate = FB_ACTIVATE_NOW;
++	info->var.vmode = FB_VMODE_NONINTERLACED;
++	info->var.height = 152;	/* mm, roughly */
++	info->var.width = 68;
++
++	info->fbops = &pacman_cmdfb_ops;
++	info->flags = FBINFO_VIRTFB;
++	info->screen_buffer = p->vaddr;
++	info->screen_size = p->visible;
++	info->pseudo_palette = p->pseudo_palette;
++
++	/* Start from a known state: a dark grey screen means "driver is alive" */
++	memset(p->vaddr, 0x20, p->visible);
++	pacman_cmdfb_kick(p);
++
++	INIT_DELAYED_WORK(&p->work, pacman_cmdfb_work);
++	schedule_delayed_work(&p->work, msecs_to_jiffies(REFRESH_MS));
++
++	ret = register_framebuffer(info);
++	if (ret) {
++		dev_err(dev, "register_framebuffer failed: %d\n", ret);
++		goto err_work;
++	}
++
++	platform_set_drvdata(pdev, p);
++	dev_info(dev, "fb%d: %ux%u stride %u at %pa, refresh every %d ms\n",
++		 info->node, width, height, stride, &p->paddr, REFRESH_MS);
++	return 0;
++
++err_work:
++	cancel_delayed_work_sync(&p->work);
++err_release:
++	framebuffer_release(info);
++	return ret;
++}
++
++static const struct of_device_id pacman_cmdfb_of_match[] = {
++	{ .compatible = "nothing,pacman-cmdfb" },
++	{ }
++};
++
++static struct platform_driver pacman_cmdfb_driver = {
++	.probe = pacman_cmdfb_probe,
++	.driver = {
++		.name = "pacman-cmdfb",
++		.of_match_table = pacman_cmdfb_of_match,
++		.suppress_bind_attrs = true,
++	},
++};
++builtin_platform_driver(pacman_cmdfb_driver);
+-- 
+2.56.0
+

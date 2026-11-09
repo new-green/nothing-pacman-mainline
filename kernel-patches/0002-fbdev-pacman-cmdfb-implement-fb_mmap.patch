@@ -1,0 +1,62 @@
+From c720481767c29ca6a8aaa7255e79004c1868f242 Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 13:18:16 +0300
+Subject: [PATCH 2/5] fbdev: pacman-cmdfb: implement fb_mmap
+
+Without .fb_mmap the fbdev core rejects mmap() with -ENODEV (and a
+WARN), so userspace like pacman-dash cannot map /dev/fb0.
+
+Map the framebuffer with the vma's default cacheable protection, which
+matches the kernel's MEMREMAP_WB alias of the same RAM. The refresh
+worker already cleans the buffer to PoC every 50 ms before kicking the
+command-mode panel, so userspace writes reach the display.
+
+Tested on Nothing Phone (2a): pacman-dash shows up on the panel.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/video/fbdev/pacman-cmdfb.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/video/fbdev/pacman-cmdfb.c b/drivers/video/fbdev/pacman-cmdfb.c
+index 942e71030..2ae547b73 100644
+--- a/drivers/video/fbdev/pacman-cmdfb.c
++++ b/drivers/video/fbdev/pacman-cmdfb.c
+@@ -21,6 +21,7 @@
+ #include <linux/delay.h>
+ #include <linux/fb.h>
+ #include <linux/io.h>
++#include <linux/mm.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+ #include <linux/platform_device.h>
+@@ -89,6 +90,18 @@ static int pacman_cmdfb_setcolreg(unsigned int regno, unsigned int red,
+ 	return 0;
+ }
+ 
++/*
++ * Map the framebuffer with the vma's default (cacheable) attributes, i.e. the
++ * same as the kernel's MEMREMAP_WB alias: no mismatched aliases, and the
++ * refresh worker's dcache_clean_poc() pushes user writes to the display.
++ */
++static int pacman_cmdfb_mmap(struct fb_info *info, struct vm_area_struct *vma)
++{
++	struct pacman_cmdfb *p = info->par;
++
++	return vm_iomap_memory(vma, p->paddr, p->visible);
++}
++
+ static const struct fb_ops pacman_cmdfb_ops = {
+ 	.owner		= THIS_MODULE,
+ 	.fb_read	= fb_sys_read,
+@@ -97,6 +110,7 @@ static const struct fb_ops pacman_cmdfb_ops = {
+ 	.fb_copyarea	= sys_copyarea,
+ 	.fb_imageblit	= sys_imageblit,
+ 	.fb_setcolreg	= pacman_cmdfb_setcolreg,
++	.fb_mmap	= pacman_cmdfb_mmap,
+ };
+ 
+ static void pacman_cmdfb_dump(struct pacman_cmdfb *p)
+-- 
+2.56.0
+

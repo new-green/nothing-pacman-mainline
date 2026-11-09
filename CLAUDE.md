@@ -1,8 +1,14 @@
 # Nothing Phone (2a) "Pacman" — mainline Linux port
 
-Context for Claude Code. Owner works on Arch Linux (fish shell; use bash for build commands)
-User-facing command cheat sheet: `docs/COMMANDS.md`
-— keep it in sync when commands or images change.
+Context for Claude Code. The owner works on Arch Linux (fish shell; use bash for build commands).
+User-facing command reference: `docs/COMMANDS.md`, overview: `README.md` — keep both in sync
+when commands, images or results change. Personal/local instructions (language, local-only docs)
+live in `~/pacman/CLAUDE.local.md`, which is not part of this repository.
+
+**Publishing:** this repo is pushed to GitHub (`new-green/nothing-pacman-mainline`). Everything
+committed must be English; local-only files are listed in `.git/info/exclude`. After changing
+kernel commits on `linux/` branch `pacman`, regenerate the series:
+`git -C ../linux format-patch -o kernel-patches fa4ad798f..pacman` (delete the old files first).
 
 ## Safety rules (always)
 - **Ask the owner before**: `fastboot flash|erase|flashing|set_active`, `dd` to any block device,
@@ -73,7 +79,8 @@ User-facing command cheat sheet: `docs/COMMANDS.md`
 ## Layout (~/pacman)
 - `linux/` mainline, branch `pacman`: DTS + cmdfb, cmdfb mmap, mtu3 force-vbus, mtk_therm_intf.
   `linux/pacman.config` is a stale untracked copy — the real fragment is `port/pacman.config`.
-- `port/` (git, master): `pacman.config`, `drivers/` (copies of our drivers), `kernel-patch/`,
+- `port/` (git, master): `pacman.config`, `kernel-patches/` (git am series on mainline `fa4ad798f`),
+  `drivers/` (copies of our drivers), `LICENSE` (GPL-2.0),
   `hybrid/` (DTB sources: test-H = stock + display node, **test-U = test-H + USB peripheral**),
   `ui/` (pacman-init.sh, initramfs.list, pacman-dash.c, pacman-reboot.c, os-release, udhcpd.conf),
   `tools/`, `docs/COMMANDS.md`, `README.md`, `arch/` (clean minimal DTS, does not boot yet).
