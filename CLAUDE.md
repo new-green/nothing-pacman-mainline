@@ -11,11 +11,13 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 `git -C ../linux format-patch -o kernel-patches v7.3.3..pacman-7.3` (delete the old files first).
 
 ## Safety rules (always)
-- **Ask the owner before**: `fastboot flash|erase|flashing|set_active`, `dd` to any block device,
-  anything touching `~/pacman/stock/`. Approval for one flash does not cover the next one.
+- **Ask the owner before**: `fastboot flash|erase|flashing|set_active`, `dd` to any block device. Approval for one flash does not cover the next one.
 - Only ever flash **`boot_b`** and **`vendor_boot_b`**. Never lk, preloader, dtbo, super,
   userdata, GPT. Stay on slot b (`fastboot getvar current-slot` must say b).
-- `stock/` is read-only: nvram/nvdata/nvcfg/proinfo backups cannot be recovered.
+- **`stock/` is never touched.** No writes, no chmod, no moves, no copies into checkpoints, no hashing
+  runs, no "quick look" — owner's explicit rule (2026-11-10). nvram/nvdata/nvcfg/proinfo backups
+  cannot be recovered. The whole tree has no write permission (`chmod -R a-w`, done at the owner's
+  request). The only reader is `tools/to-stock.sh`, which flashes `boot_b.img`/`vendor_boot_b.img`.
 - No charging management on mainline: keep tests reasonably short. Thermal is covered (critical
   trip 95 °C powers off), battery level is not visible.
 - Building/editing in `port/` and `linux/` needs no permission. Commit only when asked.
