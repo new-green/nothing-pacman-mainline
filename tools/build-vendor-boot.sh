@@ -4,6 +4,7 @@
 #   ~/pacman/out/pacman-alpine-vendor_boot.img
 #
 #   bash ~/pacman/port/tools/build-vendor-boot.sh [dtb.img]     (default: hybrid/test-U.img)
+#   OUT=~/pacman/out/other.img bash ...                          (other output name)
 #
 # Starts from your stock vendor_boot's mkbootimg arguments (work/vb_args.txt, made with
 # `unpack_bootimg --format=mkbootimg`) and only swaps the DTB and the first (platform) ramdisk
@@ -18,7 +19,7 @@ PORT="$(cd "$(dirname "$0")/.." && pwd)"
 DTB="$(realpath "${1:-$PORT/hybrid/test-U.img}")"
 ROOT="$TOP/alpine/rootfs"
 WORK="$TOP/work"
-OUT="$TOP/out/pacman-alpine-vendor_boot.img"
+OUT="${OUT:-$TOP/out/pacman-alpine-vendor_boot.img}"
 RD="$TOP/alpine/alpine-ramdisk.cpio.gz"
 LIMIT=$((64 * 1024 * 1024))     # vendor_boot partition and LK's ramdisk buffer
 

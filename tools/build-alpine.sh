@@ -17,7 +17,7 @@ BRANCH=v3.24
 MINI_SHA256=4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de
 NCOPA_FPR=0482D84022F52DF1C4E7CD43293ACD0907D9495A
 APKTOOLS=apk-tools-static-3.0.9-r0
-PACKAGES=(bash htop nano fastfetch "$@")
+PACKAGES=(bash htop nano fastfetch evtest "$@")
 
 TOP="${PACMAN:-$HOME/pacman}/alpine"
 DL="$TOP/dl"
