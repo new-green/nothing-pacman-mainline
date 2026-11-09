@@ -21,6 +21,7 @@
 #include <linux/delay.h>
 #include <linux/fb.h>
 #include <linux/io.h>
+#include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
@@ -89,6 +90,18 @@ static int pacman_cmdfb_setcolreg(unsigned int regno, unsigned int red,
 	return 0;
 }
 
+/*
+ * Map the framebuffer with the vma's default (cacheable) attributes, i.e. the
+ * same as the kernel's MEMREMAP_WB alias: no mismatched aliases, and the
+ * refresh worker's dcache_clean_poc() pushes user writes to the display.
+ */
+static int pacman_cmdfb_mmap(struct fb_info *info, struct vm_area_struct *vma)
+{
+	struct pacman_cmdfb *p = info->par;
+
+	return vm_iomap_memory(vma, p->paddr, p->visible);
+}
+
 static const struct fb_ops pacman_cmdfb_ops = {
 	.owner		= THIS_MODULE,
 	.fb_read	= fb_sys_read,
@@ -97,6 +110,7 @@ static const struct fb_ops pacman_cmdfb_ops = {
 	.fb_copyarea	= sys_copyarea,
 	.fb_imageblit	= sys_imageblit,
 	.fb_setcolreg	= pacman_cmdfb_setcolreg,
+	.fb_mmap	= pacman_cmdfb_mmap,
 };
 
 static void pacman_cmdfb_dump(struct pacman_cmdfb *p)
