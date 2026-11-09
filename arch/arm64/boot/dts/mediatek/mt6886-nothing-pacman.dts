@@ -1,0 +1,320 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Nothing Phone (2a) "Pacman" - minimal mainline boot.
+ *
+ * Memory map and reserved regions copied from the DTB the bootloader (LK)
+ * passes to the stock kernel (/sys/firmware/fdt on a running device).
+ *
+ * Framebuffer: atag,videolfb-fb_base = 0xfe050000. The panel is a DSI
+ * command-mode panel, so writes to this buffer only reach the screen
+ * when the display engine pushes a frame; simple-framebuffer alone
+ * will not show anything yet.
+ */
+
+/dts-v1/;
+
+#include "mt6886.dtsi"
+#include "mt6886-nothing-pacman-overlay-sink.dtsi"
+
+#define FB_BASE		0xfe050000
+#define FB_WIDTH	1080
+#define FB_HEIGHT	2412
+#define FB_STRIDE	(1088 * 4)
+#define FB_SIZE		0x01fa0000
+
+/ {
+	model = "Nothing Phone (2a)";
+	/* Exactly as in the stock DTB; the bootloader may match on it */
+	compatible = "mediatek,MT6886";
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	chosen: chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* The kernel uses its built-in command line (CONFIG_CMDLINE_FORCE) */
+		bootargs = "console=tty0";
+
+		framebuffer0: framebuffer@fe050000 {
+			compatible = "simple-framebuffer";
+			reg = <0 FB_BASE 0 FB_SIZE>;
+			width = <FB_WIDTH>;
+			height = <FB_HEIGHT>;
+			stride = <FB_STRIDE>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	/* 12 GB, as reported by the bootloader */
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x3 0x00000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* pstore: configured on the command line (ramoops.*), same as stock */
+		pstore@48090000 {
+			reg = <0x0 0x48090000 0x0 0x000e0000>;
+			no-map;
+		};
+
+		framebuffer@fe050000 {
+			reg = <0 FB_BASE 0 FB_SIZE>;
+			no-map;
+		};
+
+		aee-debug-kinfo@48080000 {
+			reg = <0x0 0x48080000 0x0 0x00010000>;
+			no-map;
+		};
+
+		minirdump@48170000 {
+			reg = <0x0 0x48170000 0x0 0x00010000>;
+			no-map;
+		};
+
+		bl31-reserved@48200000 {
+			reg = <0x0 0x48200000 0x0 0x00200000>;
+			no-map;
+		};
+
+		crypto-hw@48410000 {
+			reg = <0x0 0x48410000 0x0 0x00010000>;
+			no-map;
+		};
+
+		aee-lk@50700000 {
+			reg = <0x0 0x50700000 0x0 0x00800000>;
+		};
+
+		adsp-image-reserved@7e000000 {
+			reg = <0x0 0x7e000000 0x0 0x00920000>;
+			no-map;
+		};
+
+		sspm-ap-shared@7f9d0000 {
+			reg = <0x0 0x7f9d0000 0x0 0x00110000>;
+			no-map;
+		};
+
+		me-gpueb-shared@7fae0000 {
+			reg = <0x0 0x7fae0000 0x0 0x00180000>;
+			no-map;
+		};
+
+		me-csffwlog-reserved@7fc60000 {
+			reg = <0x0 0x7fc60000 0x0 0x00010000>;
+			no-map;
+		};
+
+		mcupm-reserved@7fc70000 {
+			reg = <0x0 0x7fc70000 0x0 0x00100000>;
+			no-map;
+		};
+
+		sspm-reserved@7fd70000 {
+			reg = <0x0 0x7fd70000 0x0 0x00280000>;
+			no-map;
+		};
+
+		emi-mbist-buf@7fff0000 {
+			reg = <0x0 0x7fff0000 0x0 0x00010000>;
+			no-map;
+		};
+
+		mm-ccu-reserved@80000000 {
+			reg = <0x0 0x80000000 0x0 0x00100000>;
+			no-map;
+		};
+
+		consys-emi-reserved@85e00000 {
+			reg = <0x0 0x85e00000 0x0 0x00d00000>;
+			no-map;
+		};
+
+		shared-dma-pool-wifi-reserve-memory-dma@86b00000 {
+			reg = <0x0 0x86b00000 0x0 0x01400000>;
+			no-map;
+		};
+
+		scp-emi-reserved@87f00000 {
+			reg = <0x0 0x87f00000 0x0 0x00020000>;
+			no-map;
+		};
+
+		ap-md-c-smem@88000000 {
+			reg = <0x0 0x88000000 0x0 0x04f60000>;
+			no-map;
+		};
+
+		ap-md-nc-smem@8e000000 {
+			reg = <0x0 0x8e000000 0x0 0x00130000>;
+			no-map;
+		};
+
+		reserve-memory-scp-share@8f000000 {
+			reg = <0x0 0x8f000000 0x0 0x00530000>;
+			no-map;
+		};
+
+		apu-apusys-rv-aee-coredump@8f640000 {
+			reg = <0x0 0x8f640000 0x0 0x002c0000>;
+			no-map;
+		};
+
+		apu-apusys-rv-secure@8f900000 {
+			reg = <0x0 0x8f900000 0x0 0x00700000>;
+			no-map;
+		};
+
+		debug-met-res-ram@9f3f0000 {
+			reg = <0x0 0x9f3f0000 0x0 0x00c00000>;
+			no-map;
+		};
+
+		spm-reserved@9fff0000 {
+			reg = <0x0 0x9fff0000 0x0 0x00010000>;
+			no-map;
+		};
+
+		me-vcp-reserved@bd000000 {
+			reg = <0x0 0xbd000000 0x0 0x00800000>;
+			no-map;
+		};
+
+		apu-mvpu-algo@bd800000 {
+			reg = <0x0 0xbd800000 0x0 0x01b00000>;
+		};
+
+		scp-reserved@bf300000 {
+			reg = <0x0 0xbf300000 0x0 0x003a0000>;
+			no-map;
+		};
+
+		ccci-tag-mem@bf7f0000 {
+			reg = <0x0 0xbf7f0000 0x0 0x00010000>;
+			no-map;
+		};
+
+		tee-secmem@bf800000 {
+			reg = <0x0 0xbf800000 0x0 0x00600000>;
+			no-map;
+		};
+
+		atf-log-reserved@bfe00000 {
+			reg = <0x0 0xbfe00000 0x0 0x00200000>;
+			no-map;
+		};
+
+		md-mem-usage@d0000000 {
+			reg = <0x0 0xd0000000 0x0 0x02660000>;
+			no-map;
+		};
+
+		md-mem-usage@d3000000 {
+			reg = <0x0 0xd3000000 0x0 0x00240000>;
+			no-map;
+		};
+
+		md-mem-usage@d4000000 {
+			reg = <0x0 0xd4000000 0x0 0x088c0000>;
+			no-map;
+		};
+
+		md-mem-usage@ed6e0000 {
+			reg = <0x0 0xed6e0000 0x0 0x00920000>;
+			no-map;
+		};
+
+		adsp-shared-reserved@f2000000 {
+			reg = <0x0 0xf2000000 0x0 0x00950000>;
+			no-map;
+		};
+
+		me-gpumputab-pma@f4400000 {
+			reg = <0x0 0xf4400000 0x0 0x00800000>;
+			no-map;
+		};
+
+		platform-debug-dfdmcu-dump@f4c00000 {
+			reg = <0x0 0xf4c00000 0x0 0x00280000>;
+			no-map;
+		};
+
+		platform-debug-dfdsoc-dump@f5000000 {
+			reg = <0x0 0xf5000000 0x0 0x00200000>;
+			no-map;
+		};
+
+		tee-reserved@f5200000 {
+			reg = <0x0 0xf5200000 0x0 0x06c00000>;
+			no-map;
+		};
+
+		gz@fbe00000 {
+			reg = <0x0 0xfbe00000 0x0 0x02200000>;
+			no-map;
+		};
+
+		dramc-rk0@1bfff0000 {
+			reg = <0x1 0xbfff0000 0x0 0x00010000>;
+			no-map;
+		};
+
+		platform-mtksmmu-protpgd@323e00000 {
+			reg = <0x3 0x23e00000 0x0 0x02200000>;
+			no-map;
+		};
+
+		gz-log@327800000 {
+			reg = <0x3 0x27800000 0x0 0x00050000>;
+		};
+
+		unmap2@327a00000 {
+			reg = <0x3 0x27a00000 0x0 0x00200000>;
+			no-map;
+		};
+
+		me-gpu-reserved@327c00000 {
+			reg = <0x3 0x27c00000 0x0 0x00200000>;
+			no-map;
+		};
+
+		me-cmdq-reserved@327e00000 {
+			reg = <0x3 0x27e00000 0x0 0x00100000>;
+			no-map;
+		};
+
+		gz-ffa-mailbox@327f90000 {
+			reg = <0x3 0x27f90000 0x0 0x00010000>;
+			no-map;
+		};
+
+		me-audio-btcvsd@327fa0000 {
+			reg = <0x3 0x27fa0000 0x0 0x00010000>;
+			no-map;
+		};
+
+		security-booker-tag@327fb0000 {
+			reg = <0x3 0x27fb0000 0x0 0x18000000>;
+			no-map;
+		};
+
+		log-store@33ffb0000 {
+			reg = <0x3 0x3ffb0000 0x0 0x00040000>;
+		};
+
+		dramc-rk1@33fff0000 {
+			reg = <0x3 0x3fff0000 0x0 0x00010000>;
+			no-map;
+		};
+	};
+};

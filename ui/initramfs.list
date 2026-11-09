@@ -1,0 +1,7 @@
+# Built into the kernel image (CONFIG_INITRAMFS_SOURCE="../port/ui/initramfs.list").
+# Paths are relative to the kernel source directory (~/pacman/linux).
+dir /dev 0755 0 0
+nod /dev/console 0600 0 0 c 5 1
+dir /proc 0755 0 0
+dir /sys 0755 0 0
+file /pacman-init ../port/ui/pacman-dash 0755 0 0

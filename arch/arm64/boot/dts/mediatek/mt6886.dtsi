@@ -1,0 +1,161 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * MediaTek MT6886 (Dimensity 7200) - minimal SoC description.
+ * Only what is needed to boot to a framebuffer console:
+ * CPUs, PSCI, GICv3, arch timer, watchdog, UART.
+ *
+ * Addresses taken from Nothing's downstream mt6886.dts
+ * (NothingOSS/android_kernel_5.15_nothing_mt6886).
+ */
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	compatible = "mediatek,mt6886";
+	interrupt-parent = <&gic>;
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	clk26m: oscillator-26m {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <26000000>;
+		clock-output-names = "clk26m";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		/*
+		 * Downstream DTS says a55/a78 (copied from an older template).
+		 * Dimensity 7200 is really 6x Cortex-A510 + 2x Cortex-A715;
+		 * the compatible string is not used for booting anyway.
+		 */
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a510";
+			reg = <0x000>;
+			enable-method = "psci";
+		};
+		cpu1: cpu@1 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a510";
+			reg = <0x100>;
+			enable-method = "psci";
+		};
+		cpu2: cpu@2 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a510";
+			reg = <0x200>;
+			enable-method = "psci";
+		};
+		cpu3: cpu@3 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a510";
+			reg = <0x300>;
+			enable-method = "psci";
+		};
+		cpu4: cpu@4 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a510";
+			reg = <0x400>;
+			enable-method = "psci";
+		};
+		cpu5: cpu@5 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a510";
+			reg = <0x500>;
+			enable-method = "psci";
+		};
+		cpu6: cpu@100 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a715";
+			reg = <0x600>;
+			enable-method = "psci";
+		};
+		cpu7: cpu@101 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a715";
+			reg = <0x700>;
+			enable-method = "psci";
+		};
+
+		cpu-map {
+			cluster0 {
+				core0 { cpu = <&cpu0>; };
+				core1 { cpu = <&cpu1>; };
+				core2 { cpu = <&cpu2>; };
+				core3 { cpu = <&cpu3>; };
+				core4 { cpu = <&cpu4>; };
+				core5 { cpu = <&cpu5>; };
+				core6 { cpu = <&cpu6>; };
+				core7 { cpu = <&cpu7>; };
+			};
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <GIC_PPI 13 IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_PPI 14 IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_PPI 11 IRQ_TYPE_LEVEL_HIGH 0>,
+			     <GIC_PPI 10 IRQ_TYPE_LEVEL_HIGH 0>;
+		/* Downstream sets this explicitly; firmware does not program CNTFRQ reliably */
+		clock-frequency = <13000000>;
+	};
+
+	gic: interrupt-controller {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "arm,gic-v3";
+		#interrupt-cells = <4>;
+		#redistributor-regions = <1>;
+		interrupt-controller;
+		reg = <0 0x0c400000 0 0x40000>,	/* distributor */
+		      <0 0x0c440000 0 0x200000>;	/* redistributors */
+		interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_HIGH 0>;
+
+		ppi-partitions {
+			ppi_cluster0: interrupt-partition-0 {
+				affinity = <&cpu0 &cpu1 &cpu2 &cpu3 &cpu4 &cpu5>;
+			};
+			ppi_cluster1: interrupt-partition-1 {
+				affinity = <&cpu6 &cpu7>;
+			};
+		};
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+
+		uart0: serial@11001000 {
+			compatible = "mediatek,mt6886-uart", "mediatek,mt6577-uart";
+			reg = <0 0x11001000 0 0x1000>;
+			interrupts = <GIC_SPI 173 IRQ_TYPE_LEVEL_HIGH 0>;
+			/* No clock driver yet: the bootloader leaves the UART clocked */
+			clocks = <&clk26m>, <&clk26m>;
+			clock-names = "baud", "bus";
+			status = "disabled";
+		};
+
+		/*
+		 * The bootloader leaves the TOPRGU watchdog running.
+		 * Without this node the phone reboots after a few seconds.
+		 */
+		watchdog: watchdog@1c007000 {
+			compatible = "mediatek,mt6886-wdt", "mediatek,mt6589-wdt";
+			reg = <0 0x1c007000 0 0x100>;
+		};
+	};
+};

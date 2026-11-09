@@ -1,0 +1,256 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * The bootloader applies Nothing's DT overlay (dtbo partition, entry 0)
+ * on top of this DTB before starting the kernel. The overlay references
+ * these labels; if any is missing the overlay fails and the bootloader
+ * never starts the kernel. They are empty, disabled placeholders: the
+ * properties the overlay adds land here and are ignored by the kernel.
+ * (/chosen is labelled in the board DTS.) Build with dtc -@.
+ */
+
+/ {
+	overlay-sink {
+		status = "disabled";
+
+		mtk_leds: mtk-leds {
+			status = "disabled";
+		};
+
+		connfem: connfem {
+			status = "disabled";
+		};
+
+		pio: pio {
+			status = "disabled";
+		};
+
+		mtkfb: mtkfb {
+			status = "disabled";
+		};
+
+		dispsys_config: dispsys-config {
+			status = "disabled";
+		};
+
+		dsi0: dsi0 {
+			status = "disabled";
+		};
+
+		gps: gps {
+			status = "disabled";
+		};
+
+		ps5169: ps5169 {
+			status = "disabled";
+		};
+
+		fusb304: fusb304 {
+			status = "disabled";
+		};
+
+		mt6375_typec: mt6375-typec {
+			status = "disabled";
+		};
+
+		typec_mux_switch: typec-mux-switch {
+			status = "disabled";
+		};
+
+		i2c7: i2c7 {
+			status = "disabled";
+		};
+
+		i2c3: i2c3 {
+			status = "disabled";
+		};
+
+		i2c6: i2c6 {
+			status = "disabled";
+		};
+
+		sound: sound {
+			status = "disabled";
+		};
+
+		snd_audio_dsp: snd-audio-dsp {
+			status = "disabled";
+		};
+
+		i2c8: i2c8 {
+			status = "disabled";
+		};
+
+		pdc: pdc {
+			status = "disabled";
+		};
+
+		spi1: spi1 {
+			status = "disabled";
+		};
+
+		goodix_fp: goodix-fp {
+			status = "disabled";
+		};
+
+		mt6368_vfp: mt6368-vfp {
+			status = "disabled";
+		};
+
+		spi4: spi4 {
+			status = "disabled";
+		};
+
+		mobicore: mobicore {
+			status = "disabled";
+		};
+
+		mtkheap_page_svp: mtkheap-page-svp {
+			status = "disabled";
+		};
+
+		mtkheap_region_svp: mtkheap-region-svp {
+			status = "disabled";
+		};
+
+		mtee_svp: mtee-svp {
+			status = "disabled";
+		};
+
+		pe5: pe5 {
+			status = "disabled";
+		};
+
+		charger: charger {
+			status = "disabled";
+		};
+
+		nt_chg: nt-chg {
+			status = "disabled";
+		};
+
+		extcon_usb: extcon-usb {
+			status = "disabled";
+		};
+
+		nofem: nofem {
+			status = "disabled";
+		};
+
+		wlan7207h: wlan7207h {
+			status = "disabled";
+		};
+
+		wlan7207c: wlan7207c {
+			status = "disabled";
+		};
+
+		qm42195: qm42195 {
+			status = "disabled";
+		};
+
+		qm45197: qm45197 {
+			status = "disabled";
+		};
+
+		spi3: spi3 {
+			status = "disabled";
+		};
+
+		mt6368_vtp: mt6368-vtp {
+			status = "disabled";
+		};
+
+		seninf_top: seninf-top {
+			status = "disabled";
+		};
+
+		csi_efuse0: csi-efuse0 {
+			status = "disabled";
+		};
+
+		csi_efuse1: csi-efuse1 {
+			status = "disabled";
+		};
+
+		csi_efuse2: csi-efuse2 {
+			status = "disabled";
+		};
+
+		mtk_composite_v4l2_2: mtk-composite-v4l2-2 {
+			status = "disabled";
+		};
+
+		i2c4: i2c4 {
+			status = "disabled";
+		};
+
+		i2c2: i2c2 {
+			status = "disabled";
+		};
+
+		wl2868c_ldo6: wl2868c-ldo6 {
+			status = "disabled";
+		};
+
+		wl2868c_ldo2: wl2868c-ldo2 {
+			status = "disabled";
+		};
+
+		topckgen_clk: topckgen-clk {
+			status = "disabled";
+		};
+
+		i2c9: i2c9 {
+			status = "disabled";
+		};
+
+		mtk_composite_v4l2_1: mtk-composite-v4l2-1 {
+			status = "disabled";
+		};
+
+		thermal_zones: thermal-zones {
+			status = "disabled";
+		};
+
+		gpio_usage_mapping: gpio-usage-mapping {
+			status = "disabled";
+		};
+
+		gpio: gpio {
+			status = "disabled";
+		};
+
+		dsi_te: dsi-te {
+			status = "disabled";
+		};
+
+		touch: touch {
+			status = "disabled";
+		};
+
+		smart_pa: smart-pa {
+			status = "disabled";
+		};
+
+		subpmic_pmu_eint: subpmic-pmu-eint {
+			status = "disabled";
+		};
+
+		rt5133_eint: rt5133-eint {
+			status = "disabled";
+		};
+
+		md1_sim1_hot_plug_eint: md1-sim1-hot-plug-eint {
+			status = "disabled";
+		};
+
+		md1_sim2_hot_plug_eint: md1-sim2-hot-plug-eint {
+			status = "disabled";
+		};
+
+		keypad: keypad {
+			status = "disabled";
+		};
+
+	};
+};
