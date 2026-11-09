@@ -1,0 +1,5 @@
+  alpine          enter Alpine Linux (first, on the PC: tools/alpine-push.sh)
+  fastfetch       system info
+  pacman-dash     dashboard on the panel
+  pacman-reboot   reboot [bootloader|recovery|poweroff]
+

@@ -5,7 +5,7 @@
 # on top of the built-in initramfs and would overwrite /bin, /etc, /init ...
 #
 # - mounts proc/sys/devtmpfs/tmpfs, installs busybox applet links
-# - starts pacman-dash on fb0
+# - panel: boot messages on fbcon, then a login prompt on tty1 (root, no password)
 # - USB network: usb0 = 172.16.42.1, DHCP for the PC, telnet (PC: telnet 172.16.42.1)
 # - keeps a root shell on /dev/ttyGS0 (USB CDC ACM; PC: picocom /dev/ttyACM0)
 
@@ -20,16 +20,35 @@ $BB mount -t devtmpfs devtmpfs /dev
 $BB mount -t tmpfs tmpfs /tmp
 $BB --install -s /pacman/bin
 
-# Android ramdisk's /etc is a dangling link to /system/etc: point it at ours
-# (os-release for fastfetch). rootfs lives in RAM, nothing persists.
-if [ -L /etc ] || [ ! -e /etc ]; then
-	rm -f /etc && ln -s /pacman/etc /etc
-fi
+# Android ramdisk's /etc and /bin are dangling links to /system/...: point them
+# at ours (os-release, passwd...; getty runs /bin/login, scripts use #!/bin/sh).
+# rootfs lives in RAM, nothing persists.
+for d in etc bin; do
+	if [ -L /$d ] || [ ! -e /$d ]; then
+		rm -f /$d && ln -s /pacman/$d /$d
+	fi
+done
 hostname pacman
 
 echo "pacman-init: busybox $($BB | $BB head -1 | $BB cut -d' ' -f2)" > /dev/kmsg
 
-pacman-dash &
+# Panel: kernel + init messages scroll on fbcon (tty1). Once the deferred-probe
+# summary (~10 s) has gone by, quiet the console and show a login prompt on tty1.
+# Root has no password. Type into it from the PC: `conspy 1` in picocom/telnet
+# (exit: Esc 3x). pacman-dash is still available as a command.
+(
+	while [ "$(cut -d. -f1 /proc/uptime)" -lt 12 ]; do
+		sleep 1
+	done
+	echo "pacman-init: login prompt on tty1, console quiet (dmesg for kernel log)" > /dev/kmsg
+	echo N > /sys/module/printk/parameters/ignore_loglevel
+	dmesg -n 1
+	while :; do
+		printf '\033[H\033[2J' > /dev/tty1
+		getty -l /pacman/bin/login 38400 tty1 linux
+		sleep 1
+	done
+) &
 
 # USB network (g_cdc ECM function -> usb0). Phone 172.16.42.1; the PC gets
 # 172.16.42.2 from udhcpd. No router option is handed out, so the PC keeps

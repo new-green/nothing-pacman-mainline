@@ -1,0 +1,4 @@
+# /etc/profile (busybox login shells on tty1 / ttyGS0 / telnet)
+export PATH=/pacman/bin HOME=/tmp
+export PS1='\u@\h:\w# '
+[ -f /etc/motd ] && cat /etc/motd
