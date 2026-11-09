@@ -49,7 +49,7 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 | Missing | clocks, pinctrl (volume down), PMIC core/IRQs, regulators, UFS, touch, battery, Wi-Fi, GPU |
 | PMIC SPT | MT6363 Self-Protection Timer reset the phone after 1.5-26 min; init turns it off at boot (SOLVED, see below) |
 
-**Images** (`out/`; a copy of the current pair + SHA256SUMS is in `archive/checkpoint-2026-11-09-xfce-images/`):
+**Images** (`out/`; a copy of the pair is in the latest `checkpoint/` folder):
 - **Current known-good pair:** `pacman-desktop-boot.img` + `pacman-desktop-vendor_boot.img`
   (7.3.3 + 9 patches, DTB test-P, SPT off at boot, Alpine + slim XFCE in an xz ramdisk, 39 MB).
 - Also in `out/`: `pacman-alpine-vendor_boot.img` (Alpine without desktop, test-P; default output of
@@ -79,9 +79,12 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 - DTB: edit `hybrid/<name>.dts`, `tools/build-dtb.sh hybrid/<name>.dts` (dtc + Android DT table);
   `tools/build-dtb.sh --check` verifies all committed `.img` files.
 - **Before every flash check the kernel size** (LK rule 5). Name new images, don't overwrite known-good ones.
-- Checkpoints: tag `checkpoint-2026-11-09-xfce` in port (pushed) and `pacman-checkpoint-2026-11-09-xfce`
-  in linux; bundles in `archive/checkpoint-2026-11-09-xfce-*.bundle`. The kernel commits exist only
-  locally (+ as kernel-patches/): bundle them again after changing the branch.
+- Checkpoints live in `~/pacman/checkpoint/<YYYY-MM-DD-HHMM>/` (owner's convention: folder named by
+  the time taken; never in archive/): `tools/checkpoint.sh "note" [boot.img vendor_boot.img]` writes
+  port.bundle, the kernel-commit bundle, the image pair, README.txt and a SHA256SUMS of every file,
+  and tags both repos (`checkpoint-<stamp>`, `pacman-checkpoint-<stamp>`). The kernel commits exist
+  only locally (+ as kernel-patches/), so take a checkpoint after changing the kernel branch.
+  First one: `checkpoint/2026-11-09-2356/` (tag `checkpoint-2026-11-09-xfce`, pushed).
 
 ## Layout (~/pacman)
 - `linux/` shallow clone; branch `pacman-7.3` = v7.3.3 (stable) + our 9 commits: DTS + cmdfb, cmdfb
@@ -97,7 +100,8 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 - `stock/` read-only backups. `work/` vendor_boot repack (`vb/`, `vb_args.txt` reproduces stock
   byte-for-byte). `out/` images. `logs/` pstore logs, `pl_lk.txt` (stock LK log), `live.dtb`.
   `alpine/` (downloads, apk.static, `rootfs/`, `rootfs-desktop/`), `busybox/`, `fastfetch/`
-  third-party sources + static binaries. `screenshots/`. `archive/` old tests, backups, checkpoints.
+  third-party sources + static binaries. `screenshots/`. `checkpoint/` (see Workflow). `archive/` old
+  tests, old images, the pre-rewrite backup bundle.
 - `~/pacman/CLAUDE.md` is a symlink to this file.
 
 ## LK / boot rules (hard-won — do not relearn)
