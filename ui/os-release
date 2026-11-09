@@ -1,0 +1,5 @@
+NAME="Pacman mainline"
+PRETTY_NAME="Pacman mainline (busybox initramfs)"
+ID=pacman-mainline
+VERSION_ID=stage2
+HOME_URL="https://github.com/NothingOSS/android_kernel_5.15_nothing_mt6886"

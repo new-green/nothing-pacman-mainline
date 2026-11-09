@@ -1,7 +1,23 @@
 # Built into the kernel image (CONFIG_INITRAMFS_SOURCE="../port/ui/initramfs.list").
 # Paths are relative to the kernel source directory (~/pacman/linux).
+# Build first: make -C ../port/ui (pacman-dash), bash ../port/tools/build-busybox.sh,
+# bash ../port/tools/build-fastfetch.sh
+#
+# Our files live under /pacman/: LK's Android ramdisk is unpacked on top of
+# this one and has its own /bin, /etc, /init.
 dir /dev 0755 0 0
 nod /dev/console 0600 0 0 c 5 1
 dir /proc 0755 0 0
 dir /sys 0755 0 0
-file /pacman-init ../port/ui/pacman-dash 0755 0 0
+dir /tmp 1777 0 0
+dir /pacman 0755 0 0
+dir /pacman/bin 0755 0 0
+file /pacman/bin/busybox ../busybox/busybox 0755 0 0
+file /pacman/bin/pacman-dash ../port/ui/pacman-dash 0755 0 0
+# Disabled until the kernel is slimmed: with fastfetch the Image (0x2c97a00, lz4 20.3 MiB)
+# bootloops in LK; 0x2b67a00 / 19.1 MiB still boots. Push it at runtime instead:
+#   port/tools/pacsh.py push ~/pacman/fastfetch/fastfetch /tmp/fastfetch -x
+#file /pacman/bin/fastfetch ../fastfetch/fastfetch 0755 0 0
+dir /pacman/etc 0755 0 0
+file /pacman/etc/os-release ../port/ui/os-release 0644 0 0
+file /pacman-init ../port/ui/pacman-init.sh 0755 0 0
