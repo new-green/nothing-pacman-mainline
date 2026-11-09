@@ -52,13 +52,11 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 **Images** (`out/`; a copy of the current pair + SHA256SUMS is in `archive/checkpoint-2026-11-09-xfce-images/`):
 - **Current known-good pair:** `pacman-desktop-boot.img` + `pacman-desktop-vendor_boot.img`
   (7.3.3 + 9 patches, DTB test-P, SPT off at boot, Alpine + slim XFCE in an xz ramdisk, 39 MB).
-- Other vendor_boot images: `pacman-alpine-vendor_boot.img` (Alpine without desktop, test-P; default
-  output of build-vendor-boot.sh, rebuilt 2026-11-09 late) and `pacman-keys-vendor_boot.img` (same,
-  older), `pacman-ctrl-vendor_boot.img` (Alpine, test-U: no SPMI -> SPT cannot be turned off ->
-  resets), `pacman-usb1-vendor_boot.img` (stock Android ramdisk, test-U: same limitation).
-- Everything else in `out/` is history from 2026-11-09 (7.4-rc1 builds `pacman-{usb1,usb1b,usb2,slim,
-  therm,dashtemp,net,ovl,login,alpine,keys,dbg}-boot.img`, 7.3.3 steps `pacman-{733,spt}-boot.img`,
-  `pacman-usb2b-boot.img` = too big, bootloops). Images without the SPT fix reset after 1.5-26 min.
+- Also in `out/`: `pacman-alpine-vendor_boot.img` (Alpine without desktop, test-P; default output of
+  build-vendor-boot.sh) and `pacman-usb1-vendor_boot.img` (stock Android ramdisk + test-U DTB: no
+  SPMI -> the SPT cannot be turned off -> resets after minutes). Both pair with the desktop boot image.
+- All other images of 2026-11-09 were moved to `archive/out-2026-11-09/` (7.4-rc1 builds, 7.3.3
+  steps, control/debug images; none has the full SPT fix, `pacman-usb2b-boot.img` bootloops).
 
 ## Workflow
 - Flash (owner approves each time): `adb reboot bootloader` (or `pacman-reboot bootloader` on mainline);
@@ -89,8 +87,7 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 - `linux/` shallow clone; branch `pacman-7.3` = v7.3.3 (stable) + our 9 commits: DTS + cmdfb, cmdfb
   mmap, mtu3 force-vbus, mtk_therm_intf, cmdfb hide LK layers, SPMI MT6886, MT6363 polled keys,
   xsphy force-bit backport, SPT attribute. Old branch `pacman` = first 7 on 7.4-rc1 (fa4ad798f).
-  Untracked there: `pacman.config` (stale copy, the real fragment is `port/pacman.config`),
-  `scripts/gen_init_cpio` (build artifact).
+  Untracked there: `scripts/gen_init_cpio` (build artifact). The config fragment is `port/pacman.config`.
 - `port/` (git, master, pushed to GitHub): `pacman.config`, `kernel-patches/` (git am series on
   `v7.3.3`), `drivers/` (copies of our three own drivers), `LICENSE`, `README.md`, `docs/COMMANDS.md`,
   `hybrid/` (DTB sources + wrapped images: test-H = stock + display node, test-U = + USB peripheral,
