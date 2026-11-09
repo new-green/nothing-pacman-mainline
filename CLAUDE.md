@@ -17,7 +17,7 @@ commands).
 ## Status (2026-11-09)
 - Mainline 7.4-rc1 boots: 8 CPUs, GICv3, arch timer, PSCI, mtk-wdt, ramoops
 - Boot logs on screen via our driver `drivers/video/fbdev/pacman-cmdfb.c` (fbcon on fb0)
-- `ui/pacman-dash.c`: fb0 dashboard, built into the kernel as /pacman-init — written, NOT yet tested on device
+- `ui/pacman-dash.c`: fb0 dashboard, built into the kernel as /pacman-init — WORKS on device (2026-11-09, needs cmdfb .fb_mmap)
 - No clocks/pinctrl/PMIC/UFS/USB/input drivers yet (all downstream nodes defer)
 
 ## Hard-won rules about LK (do not relearn these)
@@ -63,7 +63,31 @@ Build / flash commands: see README.md.
 - Mainline has no charging/thermal management: keep device tests short.
 - Building, compiling and editing files in `port/` and `linux/` is fine without asking.
 
-## Planned next: USB serial console (agreed with owner, not started)
+## USB serial console — stage 1 DONE 2026-11-09 (log: logs/log-usb1-...txt)
+- Result: mtu3 probed ("IP version 0x1007(U3 IP)", max_speed high-speed, u3p_dis_msk 1), xsphy OK,
+  "g_serial ready", "gadget (high-speed) pullup D+" -> SSUSB block IS powered/clocked by LK.
+  But the PC saw nothing (only the preloader's 0e8d:2000 for ~3 s at boot) -> VBUS not seen by the MAC.
+- **Stage 1b WORKS (2026-11-09 13:11):** PC enumerates 0525:a4a7 "Gadget Serial v2.4" at high-speed,
+  /dev/ttyACM0 appears (~11 s after the preloader's 0e8d:2000). Root cause of stage 1 = VBUS.
+  PC side: /dev/ttyACM0 is root:uucp -> user needs group uucp (or sudo) for screen.
+- Stage 1b patch: kernel-patch/mtu3-force-vbus.patch makes mtu3 honour
+  `mediatek,force-vbus` (sets VBUS_FRC_EN|VBUS_ON in U3D_MISC_CTRL, logs "force vbus on").
+  Images: out/pacman-usb1b-boot.img + out/pacman-usb1-vendor_boot.img (current known-good pair).
+- Tip: pstore logs contain bit flips -> file(1) says "data"; grep needs -a (`command grep -a`).
+
+### Stage 1 details
+- DTB `hybrid/test-U.dts` -> `test-U.img` = test-H + usb0: clocks=<clk26m 0x42> "sys_ck", no vusb33-supply,
+  phys = u2 only, dr_mode "peripheral", `mediatek,u3p-dis-msk = <1>` (else mtu3 waits for U3 MAC clock
+  -> "clks of sts1 are not stable"); u2 phy: nvmem-cells dropped (efuse "mediatek,devinfo" has no driver).
+  `port` node kept (overlay/__symbols__ label mtu3_drd_switch).
+- Config: PHY_MTK_XSPHY=y, USB_G_SERIAL=y. Images: out/pacman-usb1-{boot,vendor_boot}.img (incl. pacman-dash).
+- Risk: mainline mtu3 ignores `mediatek,force-vbus` (uses HW VBUS detect). If enumeration fails but the
+  gadget probed, next step = force VBUS_FRC_EN|VBUS_ON in U3D_MISC_CTRL (small mtu3 patch).
+- ui/Makefile fixed: `CC ?=` silently built x86-64 (make predefines CC).
+- pacman-cmdfb had no .fb_mmap (mainline then returns -ENODEV -> dash can't map fb0). Added
+  `pacman_cmdfb_mmap` = vm_iomap_memory() with default cacheable prot (matches the WB kernel alias).
+
+## Planned next: USB serial console (agreed with owner)
 Goal: phone shows up on the PC as /dev/ttyACM0 (g_serial / CDC ACM), later a busybox shell
 on ttyGS0 and the kernel console on ttyGS0 (ends the flash -> stock -> pstore loop).
 Findings from the stock DTB (`/soc/usb0@11201000`):
@@ -86,7 +110,6 @@ Stage 2: static busybox in the built-in initramfs, shell on /dev/ttyGS0;
 PC: `screen /dev/ttyACM0 115200`. Can be combined with the pacman-dash test in one flash.
 
 ## Next steps (ideas)
-- Test pacman-dash on device
 - Clear LK's "Orange State" overlay layer
 - Clean minimal DTB without copied reserved regions
 - Volume keys (mediatek keypad / PMIC), busybox initramfs

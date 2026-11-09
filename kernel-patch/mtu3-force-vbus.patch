@@ -1,0 +1,81 @@
+From 6af5c96ded72814bfeae5097097d8440669d3542 Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 13:18:16 +0300
+Subject: [PATCH] usb: mtu3: honour mediatek,force-vbus
+
+On some boards VBUS is sensed by a charger IC rather than the SSUSB IP,
+so the device MAC never sees VBUS-valid and the gadget, although it
+asserts the D+ pullup, never enumerates. The vendor kernel handles this
+with the "mediatek,force-vbus" property; mainline ignored it and always
+cleared VBUS_FRC_EN | VBUS_ON in U3D_MISC_CTRL.
+
+Read the property and, when present, force VBUS on instead.
+
+Tested on Nothing Phone (2a) (MT6886) with g_serial: the PC enumerates
+0525:a4a7 at high speed and /dev/ttyACM0 appears; without this patch
+nothing enumerates.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/usb/mtu3/mtu3.h      |  3 +++
+ drivers/usb/mtu3/mtu3_core.c | 10 ++++++++--
+ drivers/usb/mtu3/mtu3_plat.c |  1 +
+ 3 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/mtu3/mtu3.h b/drivers/usb/mtu3/mtu3.h
+index ba5a63669..7dd1a5948 100644
+--- a/drivers/usb/mtu3/mtu3.h
++++ b/drivers/usb/mtu3/mtu3.h
+@@ -241,6 +241,8 @@ struct otg_switch_mtk {
+  *		but when use dual-role mode, can't disable u2port0
+  * @u3p_dis_msk: mask of disabling usb3 ports, for example, bit0==1 to
+  *		disable u3port0, bit1==1 to disable u3port1,... etc
++ * @force_vbus: force the device MAC's VBUS-valid input on, for boards whose
++ *		VBUS is sensed by a charger IC instead of the SSUSB IP
+  * @dbgfs_root: only used when supports manual dual-role switch via debugfs
+  * @uwk_en: it's true when supports remote wakeup in host mode
+  * @uwk: syscon including usb wakeup glue layer between SSUSB IP and SPM
+@@ -266,6 +268,7 @@ struct ssusb_mtk {
+ 	int u3_ports;
+ 	int u2p_dis_msk;
+ 	int u3p_dis_msk;
++	bool force_vbus;
+ 	struct dentry *dbgfs_root;
+ 	/* usb wakeup for host mode */
+ 	bool uwk_en;
+diff --git a/drivers/usb/mtu3/mtu3_core.c b/drivers/usb/mtu3/mtu3_core.c
+index 990e2e8e6..cf5fc93a8 100644
+--- a/drivers/usb/mtu3/mtu3_core.c
++++ b/drivers/usb/mtu3/mtu3_core.c
+@@ -659,8 +659,14 @@ static void mtu3_regs_init(struct mtu3 *mtu)
+ 
+ 	/* U2/U3 detected by HW */
+ 	mtu3_writel(mbase, U3D_DEVICE_CONF, 0);
+-	/* vbus detected by HW */
+-	mtu3_clrbits(mbase, U3D_MISC_CTRL, VBUS_FRC_EN | VBUS_ON);
++	if (mtu->ssusb->force_vbus) {
++		/* vbus sensed elsewhere (e.g. charger IC): force it valid */
++		mtu3_setbits(mbase, U3D_MISC_CTRL, VBUS_FRC_EN | VBUS_ON);
++		dev_info(mtu->dev, "force vbus on\n");
++	} else {
++		/* vbus detected by HW */
++		mtu3_clrbits(mbase, U3D_MISC_CTRL, VBUS_FRC_EN | VBUS_ON);
++	}
+ 	/* use new QMU format when HW version >= 0x1003 */
+ 	if (mtu->gen2cp)
+ 		mtu3_writel(mbase, U3D_QFCR, ~0x0);
+diff --git a/drivers/usb/mtu3/mtu3_plat.c b/drivers/usb/mtu3/mtu3_plat.c
+index b4f4c776a..35e8389d1 100644
+--- a/drivers/usb/mtu3/mtu3_plat.c
++++ b/drivers/usb/mtu3/mtu3_plat.c
+@@ -272,6 +272,7 @@ static int get_ssusb_rscs(struct platform_device *pdev, struct ssusb_mtk *ssusb)
+ 		ssusb->dr_mode = USB_DR_MODE_OTG;
+ 
+ 	of_property_read_u32(node, "mediatek,u3p-dis-msk", &ssusb->u3p_dis_msk);
++	ssusb->force_vbus = of_property_read_bool(node, "mediatek,force-vbus");
+ 
+ 	if (ssusb->dr_mode == USB_DR_MODE_PERIPHERAL)
+ 		goto out;
+-- 
+2.56.0
+
