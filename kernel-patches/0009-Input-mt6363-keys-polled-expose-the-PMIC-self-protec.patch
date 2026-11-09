@@ -1,0 +1,126 @@
+From 79dd2b4987a12f2d2859dda33b77f30b4dbded59 Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Mon, 9 Nov 2026 22:53:23 +0300
+Subject: [PATCH 9/9] Input: mt6363-keys-polled: expose the PMIC
+ self-protection timer
+
+TF-A enables the MT6363 Self-Protection Timer (RG_SELFWDT_EN, 0xa14
+bit 0) at boot. Under mainline nothing keeps it satisfied and the PMIC
+power-cycles the phone after 1.5 to 26 minutes; LK then logs
+SELFWDT=0x41, PONSTS 0x0 and POFFSTS 0x10.
+
+Log the timer state at probe and add an spt_enable sysfs attribute so
+userspace can turn it off. The driver never changes it on its own.
+
+Tested on Nothing Phone (2a): with the timer off the phone ran 30
+minutes without a reset.
+
+Co-Authored-By: Claude Fable 5.2 <noreply@anthropic.com>
+---
+ drivers/input/keyboard/mt6363-keys-polled.c | 62 +++++++++++++++++++--
+ 1 file changed, 58 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/input/keyboard/mt6363-keys-polled.c b/drivers/input/keyboard/mt6363-keys-polled.c
+index 9a09fc6d8..d05253b94 100644
+--- a/drivers/input/keyboard/mt6363-keys-polled.c
++++ b/drivers/input/keyboard/mt6363-keys-polled.c
+@@ -4,10 +4,15 @@
+  *
+  * Mainline has no MT6363 core (MFD + interrupt controller) driver yet, so
+  * instead of PMIC interrupts this reads the debounced key status in
+- * TOPSTATUS while the input device is open. It only ever reads from the
+- * PMIC. Bring-up driver for MT6886 (Nothing Phone (2a)): it binds the
+- * "mediatek,mt6363" SPMI device directly and must give way to a real
+- * MT6363 core driver once one exists.
++ * TOPSTATUS while the input device is open. Bring-up driver for MT6886
++ * (Nothing Phone (2a)): it binds the "mediatek,mt6363" SPMI device directly
++ * and must give way to a real MT6363 core driver once one exists.
++ *
++ * It also exposes the PMIC's Self-Protection Timer (SPT, RG_SELFWDT_EN), which
++ * the secure firmware (TF-A) enables at boot: when nothing keeps it satisfied
++ * the PMIC power-cycles the system (LK then reports SELFWDT=0x41). The timer
++ * state is logged at probe; it is only ever changed when root writes to the
++ * spt_enable attribute. Otherwise the driver only reads from the PMIC.
+  */
+ 
+ #include <linux/bits.h>
+@@ -20,6 +25,8 @@
+ #define MT6363_SWCID		0x000b
+ #define MT6363_TOPSTATUS	0x001e
+ #define MT6363_CHIP_ID		0x63
++#define MT6363_RG_SELFWDT_EN	0x0a14		/* bit 0: Self-Protection Timer */
++#define MT6363_SELFWDT_EN	BIT(0)
+ 
+ #define MT6363_KEYS_POLL_MS	20
+ 
+@@ -51,6 +58,45 @@ static void mt6363_keys_poll(struct input_dev *input)
+ 	input_sync(input);
+ }
+ 
++static ssize_t spt_enable_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct mt6363_keys *k = dev_get_drvdata(dev);
++	unsigned int val;
++	int ret;
++
++	ret = regmap_read(k->map, MT6363_RG_SELFWDT_EN, &val);
++	if (ret)
++		return ret;
++	return sysfs_emit(buf, "%u\n", !!(val & MT6363_SELFWDT_EN));
++}
++
++static ssize_t spt_enable_store(struct device *dev, struct device_attribute *attr,
++				const char *buf, size_t count)
++{
++	struct mt6363_keys *k = dev_get_drvdata(dev);
++	bool enable;
++	int ret;
++
++	ret = kstrtobool(buf, &enable);
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(k->map, MT6363_RG_SELFWDT_EN, MT6363_SELFWDT_EN,
++				 enable ? MT6363_SELFWDT_EN : 0);
++	if (ret)
++		return ret;
++
++	dev_warn(dev, "PMIC self-protection timer %s by user\n", enable ? "enabled" : "disabled");
++	return count;
++}
++static DEVICE_ATTR_RW(spt_enable);
++
++static struct attribute *mt6363_keys_attrs[] = {
++	&dev_attr_spt_enable.attr,
++	NULL
++};
++ATTRIBUTE_GROUPS(mt6363_keys);
++
+ static const struct regmap_config mt6363_keys_regmap_config = {
+ 	.reg_bits	= 16,
+ 	.val_bits	= 8,
+@@ -84,6 +130,13 @@ static int mt6363_keys_probe(struct spmi_device *sdev)
+ 	dev_info(dev, "MT6363 (chip id 0x%02x) on SPMI usid %u, TOPSTATUS 0x%02x\n",
+ 		 id, sdev->usid, status);
+ 
++	ret = regmap_read(k->map, MT6363_RG_SELFWDT_EN, &status);
++	if (ret)
++		return dev_err_probe(dev, ret, "cannot read RG_SELFWDT_EN\n");
++	dev_info(dev, "self-protection timer (RG_SELFWDT_EN 0x%03x) %s\n", MT6363_RG_SELFWDT_EN,
++		 status & MT6363_SELFWDT_EN ? "enabled" : "disabled");
++	spmi_device_set_drvdata(sdev, k);
++
+ 	k->input = devm_input_allocate_device(dev);
+ 	if (!k->input)
+ 		return -ENOMEM;
+@@ -114,6 +167,7 @@ static struct spmi_driver mt6363_keys_driver = {
+ 	.driver = {
+ 		.name = "mt6363-keys-polled",
+ 		.of_match_table = mt6363_keys_of_match,
++		.dev_groups = mt6363_keys_groups,
+ 	},
+ };
+ module_spmi_driver(mt6363_keys_driver);
+-- 
+2.56.0
+

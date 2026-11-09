@@ -125,6 +125,21 @@ free -m; cat /proc/loadavg; top
 About 300 busybox commands (`ls`, `vi`, `top`, `devmem`, ...) are in `/pacman/bin`.
 Critical temperature is **95 °C**: above it the kernel powers the phone off.
 
+### XFCE desktop
+```bash
+# PC: build the desktop root filesystem and its vendor_boot image (xz ramdisk)
+DESKTOP=1 bash ~/pacman/port/tools/build-alpine.sh
+ROOT=~/pacman/alpine/rootfs-desktop COMP=xz OUT=~/pacman/out/pacman-desktop-vendor_boot.img \
+  bash ~/pacman/port/tools/build-vendor-boot.sh ~/pacman/port/hybrid/test-P.img
+```
+With that image the boot log scrolls, then XFCE starts on the panel (landscape). Control it from
+the PC with any VNC viewer: `gvncviewer 172.16.42.1:0` (no password, USB link only). If the desktop
+fails three times in a row the login prompt appears instead; see `/tmp/xfce-session.log` and
+`/tmp/Xorg.0.log` on the phone. Restart the desktop: `pkill Xorg`.
+
+The PMIC's self-protection timer would power-cycle the phone after a few minutes; the init turns it
+off at every boot (`cat /sys/bus/spmi/devices/0-04/spt_enable` -> 0).
+
 ### Alpine Linux
 With `pacman-alpine-vendor_boot.img` the phone boots straight into Alpine: log in on the panel
 (`conspy 1`), over telnet or on the serial shell — you are in Alpine (`cat /etc/alpine-release`),

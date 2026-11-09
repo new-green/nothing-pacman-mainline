@@ -5,6 +5,12 @@
 #   ~/pacman/alpine/alpine-rootfs.tar.gz    what tools/alpine-push.sh sends to the phone
 #
 #   bash ~/pacman/port/tools/build-alpine.sh [extra packages...]
+#   DESKTOP=1 bash ~/pacman/port/tools/build-alpine.sh    slim XFCE desktop -> rootfs-desktop/
+#
+# DESKTOP=1 adds Xorg (fbdev), a slim XFCE (no xfce4 meta package), x11vnc and dbus, then removes
+# Mesa's LLVM/gallium (~200 MiB): there is no GPU driver, Xorg runs on fbdev with GLX disabled.
+# The post-install work skipped by --no-scripts (messagebus user, font/pixbuf/schema caches) is
+# done by hand here or at first start by /usr/local/bin/pacman-desktop.
 #
 # Minirootfs: sha256 + GPG (Natanael Copa's key, fingerprint pinned below).
 # Packages: installed with Alpine's own apk.static (x86_64 build), signatures checked
@@ -18,11 +24,18 @@ MINI_SHA256=4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de
 NCOPA_FPR=0482D84022F52DF1C4E7CD43293ACD0907D9495A
 APKTOOLS=apk-tools-static-3.0.9-r0
 PACKAGES=(bash htop nano fastfetch evtest "$@")
+DESKTOP="${DESKTOP:-0}"
+SUFFIX=""
+if [[ "$DESKTOP" == 1 ]]; then
+	PACKAGES+=(xorg-server xf86-video-fbdev xinit xfwm4 xfce4-panel xfdesktop xfce4-session
+		xfce4-settings xfce4-terminal font-dejavu dbus dbus-x11 x11vnc)
+	SUFFIX="-desktop"
+fi
 
 TOP="${PACMAN:-$HOME/pacman}/alpine"
 DL="$TOP/dl"
-ROOT="$TOP/rootfs"
-OUT="$TOP/alpine-rootfs.tar.gz"
+ROOT="$TOP/rootfs$SUFFIX"
+OUT="$TOP/alpine-rootfs$SUFFIX.tar.gz"
 CDN=https://dl-cdn.alpinelinux.org/alpine
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -74,6 +87,109 @@ export PS1='\[\e[1;32m\]alpine\[\e[0m\]@\h:\w# '
 # our static tools from the kernel's built-in initramfs (pacman-reboot, pacman-dash, ...)
 case ":$PATH:" in *:/pacman/bin:*) ;; *) [ -d /pacman/bin ] && PATH="$PATH:/pacman/bin" ;; esac
 EOF
+
+if [[ "$DESKTOP" == 1 ]]; then
+	# no GPU driver: drop Mesa's software stack (only libGL/EGL/gbm and Xorg's GL modules use it)
+	rm -f "$ROOT"/usr/lib/libLLVM* "$ROOT"/usr/lib/libgallium*
+	rm -rf "$ROOT"/usr/lib/dri
+
+	# dbus pre-install script (skipped): system bus user
+	grep -q '^messagebus:' "$ROOT/etc/group" || echo 'messagebus:x:101:messagebus' >> "$ROOT/etc/group"
+	grep -q '^messagebus:' "$ROOT/etc/passwd" ||
+		echo 'messagebus:x:100:101:messagebus:/run/dbus:/sbin/nologin' >> "$ROOT/etc/passwd"
+	grep -q '^messagebus:' "$ROOT/etc/shadow" || echo 'messagebus:!::0:::::' >> "$ROOT/etc/shadow"
+
+	# Xorg on our fbdev (pacman-cmdfb), landscape, no input devices (x11vnc injects via XTEST)
+	mkdir -p "$ROOT/etc/X11/xorg.conf.d"
+	cat > "$ROOT/etc/X11/xorg.conf.d/10-pacman.conf" <<'XEOF'
+Section "ServerFlags"
+	Option "AutoAddDevices" "false"
+	Option "AllowEmptyInput" "true"
+	Option "BlankTime" "0"
+	Option "StandbyTime" "0"
+	Option "SuspendTime" "0"
+	Option "OffTime" "0"
+EndSection
+
+Section "Module"
+	Disable "glx"
+EndSection
+
+Section "Device"
+	Identifier "pacman-cmdfb"
+	Driver "fbdev"
+	Option "fbdev" "/dev/fb0"
+	Option "ShadowFB" "on"
+	Option "Rotate" "CW"
+EndSection
+XEOF
+
+	# XFCE: 2x scaling (1080x2412 panel), big window decorations, no GL compositor
+	X="$ROOT/root/.config/xfce4/xfconf/xfce-perchannel-xml"
+	mkdir -p "$X"
+	cat > "$X/xsettings.xml" <<'XEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xsettings" version="1.0">
+  <property name="Gdk" type="empty">
+    <property name="WindowScalingFactor" type="int" value="2"/>
+  </property>
+  <property name="Xft" type="empty">
+    <property name="DPI" type="int" value="96"/>
+  </property>
+</channel>
+XEOF
+	cat > "$X/xfwm4.xml" <<'XEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="theme" type="string" value="Default-xhdpi"/>
+    <property name="use_compositing" type="bool" value="false"/>
+  </property>
+</channel>
+XEOF
+
+	# started by /pacman-init instead of the login prompt when present
+	mkdir -p "$ROOT/usr/local/bin"
+	cat > "$ROOT/usr/local/bin/pacman-desktop" <<'XEOF'
+#!/bin/sh
+# XFCE on the panel (Xorg on fb0, vt1) + x11vnc on the USB network (PC: vncviewer 172.16.42.1).
+export HOME=/root USER=root LOGNAME=root SHELL=/bin/sh
+export XDG_RUNTIME_DIR=/run/user/0 PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/pacman/bin
+mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
+
+# what package post-install scripts would have done (rootfs is in RAM: every boot)
+[ -s /etc/machine-id ] || dbus-uuidgen > /etc/machine-id
+mkdir -p /var/lib/dbus /run/dbus && ln -sf /etc/machine-id /var/lib/dbus/machine-id
+# without the mime cache gdk-pixbuf cannot identify icons and the XFCE session aborts (Wnck)
+[ -f /usr/share/mime/mime.cache ] || update-mime-database /usr/share/mime > /dev/null 2>&1
+fc-cache -s > /dev/null 2>&1
+gdk-pixbuf-query-loaders --update-cache > /dev/null 2>&1
+glib-compile-schemas /usr/share/glib-2.0/schemas > /dev/null 2>&1
+for d in /usr/share/icons/*/; do gtk-update-icon-cache -q -f "$d" > /dev/null 2>&1; done
+dbus-daemon --system --fork > /dev/null 2>&1
+
+# x11vnc once the X socket exists; only on the USB link, no password
+(
+	for i in $(seq 1 60); do [ -S /tmp/.X11-unix/X0 ] && break; sleep 1; done
+	x11vnc -display :0 -listen 172.16.42.1 -rfbport 5900 -forever -shared -nopw \
+		-quiet -bg -o /tmp/x11vnc.log
+) &
+
+# XFCE's own xinitrc sets up the session environment (XDG dirs, dbus, xrdb) before
+# xfce4-session. Client output also goes to the kernel log so it survives in pstore.
+xinit /etc/xdg/xfce4/xinitrc -- /usr/bin/Xorg :0 vt1 -nolisten tcp -noreset \
+	-logfile /tmp/Xorg.0.log > /tmp/xfce-session.log 2>&1
+rc=$?
+tail -n 15 /tmp/xfce-session.log | while IFS= read -r l; do echo "pacman-desktop: $l" > /dev/kmsg; done
+exit $rc
+XEOF
+	chmod 0755 "$ROOT/usr/local/bin/pacman-desktop"
+	cat >> "$ROOT/etc/motd" <<'XEOF'
+  Desktop: XFCE runs on the panel; control it from the PC with a VNC viewer
+  (172.16.42.1:5900). Restart it: pkill Xorg (pacman-init starts it again).
+
+XEOF
+fi
 
 tar --numeric-owner --owner=0 --group=0 -czf "$OUT" -C "$ROOT" .
 say "$(du -sh "$ROOT" | cut -f1) rootfs -> $OUT ($(du -h "$OUT" | cut -f1))"

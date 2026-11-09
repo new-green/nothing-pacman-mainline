@@ -5,6 +5,7 @@
 #
 #   bash ~/pacman/port/tools/build-vendor-boot.sh [dtb.img]     (default: hybrid/test-U.img)
 #   OUT=~/pacman/out/other.img bash ...                          (other output name)
+#   ROOT=~/pacman/alpine/rootfs-desktop COMP=xz OUT=... bash ...  (desktop: needs xz to fit)
 #
 # Starts from your stock vendor_boot's mkbootimg arguments (work/vb_args.txt, made with
 # `unpack_bootimg --format=mkbootimg`) and only swaps the DTB and the first (platform) ramdisk
@@ -17,10 +18,15 @@ set -euo pipefail
 TOP="${PACMAN:-$HOME/pacman}"
 PORT="$(cd "$(dirname "$0")/.." && pwd)"
 DTB="$(realpath "${1:-$PORT/hybrid/test-U.img}")"
-ROOT="$TOP/alpine/rootfs"
+ROOT="${ROOT:-$TOP/alpine/rootfs}"
 WORK="$TOP/work"
 OUT="${OUT:-$TOP/out/pacman-alpine-vendor_boot.img}"
-RD="$TOP/alpine/alpine-ramdisk.cpio.gz"
+COMP="${COMP:-gzip}"
+case "$COMP" in
+	gzip) RD="$TOP/alpine/alpine-ramdisk.cpio.gz"; ZIP=(gzip -9) ;;
+	xz)   RD="$TOP/alpine/alpine-ramdisk.cpio.xz"; ZIP=(xz -9e -T0 --check=crc32) ;;  # kernel needs crc32
+	*)    echo "COMP must be gzip or xz" >&2; exit 2 ;;
+esac
 LIMIT=$((64 * 1024 * 1024))     # vendor_boot partition and LK's ramdisk buffer
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -35,7 +41,7 @@ args=$(cat "$WORK/vb_args.txt")
 
 say "ramdisk: Alpine $(cat "$ROOT/etc/alpine-release") ($(du -sh "$ROOT" | cut -f1))"
 (cd "$ROOT" && find . -mindepth 1 -print0 | LC_ALL=C sort -z \
-	| cpio --null --quiet -o -H newc -R 0:0) | gzip -9 > "$RD"
+	| cpio --null --quiet -o -H newc -R 0:0) | "${ZIP[@]}" > "$RD"
 
 args=${args/--dtb vb\/dtb/--dtb $DTB}
 args=${args/--vendor_ramdisk_fragment vb\/vendor_ramdisk00/--vendor_ramdisk_fragment $RD}

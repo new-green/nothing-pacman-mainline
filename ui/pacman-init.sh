@@ -33,6 +33,17 @@ hostname pacman
 
 echo "pacman-init: busybox $($BB | $BB head -1 | $BB cut -d' ' -f2)" > /dev/kmsg
 
+# The MT6363 PMIC's Self-Protection Timer (enabled by TF-A at boot) power-cycles the phone after
+# 1.5-26 min under mainline (LK then logs SELFWDT=0x41): nothing here keeps it satisfied. Turn
+# it off; the AP watchdog (mtk-wdt) and the PMIC long-press reset still work. Needs the
+# mt6363-keys-polled driver (SPMI); re-enabled by the firmware on every boot.
+SPT=/sys/bus/spmi/devices/0-04/spt_enable
+if [ -w "$SPT" ]; then
+	echo 0 > "$SPT" && echo "pacman-init: PMIC self-protection timer off" > /dev/kmsg
+else
+	echo "pacman-init: no $SPT (SPMI/PMIC driver missing): expect PMIC resets" > /dev/kmsg
+fi
+
 # Alpine as the root filesystem (tools/build-vendor-boot.sh puts it into vendor_boot's
 # ramdisk, which the kernel unpacks on top of us): prefer its programs, keep ours
 # reachable, give it /run. Logins then land in Alpine.
@@ -45,16 +56,30 @@ if [ -f /etc/alpine-release ]; then
 fi
 
 # Panel: kernel + init messages scroll on fbcon (tty1). Once the deferred-probe
-# summary (~10 s) has gone by, quiet the console and show a login prompt on tty1.
-# Root has no password. Type into it from the PC: `conspy 1` in picocom/telnet
-# (exit: Esc 3x). pacman-dash is still available as a command.
+# summary (~10 s) has gone by, quiet the console and start the XFCE desktop if the
+# Alpine root has one (/usr/local/bin/pacman-desktop, DESKTOP=1 build), otherwise a
+# login prompt on tty1. Root has no password. Type into the console from the PC:
+# `conspy 1` in picocom/telnet (exit: Esc 3x). pacman-dash is still available.
 (
 	while [ "$(cut -d. -f1 /proc/uptime)" -lt 12 ]; do
 		sleep 1
 	done
-	echo "pacman-init: login prompt on tty1, console quiet (dmesg for kernel log)" > /dev/kmsg
 	echo N > /sys/module/printk/parameters/ignore_loglevel
 	dmesg -n 1
+	if [ -x /usr/local/bin/pacman-desktop ]; then
+		# restart the desktop when it exits; give up after 3 quick failures
+		fails=0
+		while [ $fails -lt 3 ]; do
+			echo "pacman-init: starting XFCE desktop (VNC 172.16.42.1:5900)" > /dev/kmsg
+			t0=$(cut -d. -f1 /proc/uptime)
+			/usr/local/bin/pacman-desktop < /dev/null > /tmp/pacman-desktop.log 2>&1
+			[ $(( $(cut -d. -f1 /proc/uptime) - t0 )) -lt 30 ] && fails=$((fails + 1)) || fails=0
+			sleep 2
+		done
+		echo "pacman-init: desktop keeps failing (/tmp/pacman-desktop.log), login prompt instead" > /dev/kmsg
+		chvt 1
+	fi
+	echo "pacman-init: login prompt on tty1, console quiet (dmesg for kernel log)" > /dev/kmsg
 	while :; do
 		printf '\033[H\033[2J' > /dev/tty1
 		getty -l /pacman/bin/login 38400 tty1 linux

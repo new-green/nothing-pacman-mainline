@@ -18,6 +18,7 @@ temperatures and boots straight into a small Alpine Linux userspace, all without
 | Userspace | Built-in initramfs: busybox, login prompt on the panel, telnet over USB, fastfetch, `pacman-dash` dashboard |
 | Alpine | Boots straight into Alpine Linux 3.24 aarch64 (it replaces Android's ramdisk in `vendor_boot`); runs from RAM |
 | Keys | Power + volume up from the MT6363 PMIC over SPMI (polled) |
+| Desktop | Slim XFCE on Xorg/fbdev (landscape, 2x scaling), controlled from the PC over VNC |
 | Thermal | CPU0-7 + GPU temperatures from the MCUPM firmware, critical trip at 95 °C (power off) |
 | Reboot | `pacman-reboot bootloader` reboots straight into fastboot |
 | Not yet | Clocks, pinctrl, PMIC (MT6363/MT6368, SPMI), regulators, UFS storage, touchscreen, keys, battery/charging, Wi-Fi, GPU |

@@ -45,11 +45,13 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 | Reboot | `pacman-reboot bootloader` -> LK fastboot (no key combo needed) |
 | SPMI/PMIC | mainline `spmi-mtk-pmif` with MT8195 data reads the MT6363 (chip id 0x63) |
 | Keys | power + volume up via MT6363 TOPSTATUS, polled (`mt6363-keys-polled`), `/dev/input/event0` |
-| UI | boot log on fbcon, then `pacman login:` on tty1 (type from the PC: `conspy 1`); `pacman-dash` on demand |
+| UI | boot log on fbcon, then slim XFCE on Xorg/fbdev (landscape, 2x), controlled over VNC (172.16.42.1:5900); login prompt on tty1 as fallback |
 | Missing | clocks, pinctrl (volume down), PMIC core/IRQs, regulators, UFS, touch, battery, Wi-Fi, GPU |
-| **OPEN BUG** | spontaneous resets after ~1.5-5 min since 2026-11-09 evening: MT6363 **self watchdog** (see below) |
+| PMIC SPT | MT6363 Self-Protection Timer reset the phone after 1.5-26 min; init turns it off at boot (SOLVED, see below) |
 
 **Images** (`out/`):
+- `pacman-desktop-boot.img` + `pacman-desktop-vendor_boot.img` — newest **known-good** (2026-11-09):
+  7.3.3 (9 patches), SPT off at boot, Alpine + slim XFCE (xz ramdisk, 39 MB image), DTB test-P.
 - `pacman-733-boot.img` + `pacman-keys-vendor_boot.img` — newest **known-good** kernel: 7.3.3 stable,
   all features (display, USB net/serial, thermal, reboot, SPMI keys) + STRICT_DEVMEM off (debug).
   7.3.3 needed a backport of the 7.4 xsphy fix that clears the U2PHYDTM0 FORCE_* bits LK leaves set
@@ -184,7 +186,15 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   the PMIC (GPIO -> needs pinctrl).
 - Test: Alpine has `evtest`; evtest output piped into /dev/kmsg survives resets via ramoops.
 
-## OPEN BUG: spontaneous resets (MT6363 self watchdog), found 2026-11-09
+## SOLVED: spontaneous resets = MT6363 Self-Protection Timer (2026-11-09)
+- Cause: TF-A enables the PMIC's SPT at every boot (RG_SELFWDT_EN, reg 0xa14 bit 0; see TF-A
+  plat/mediatek/drivers/pmic/mt6363/mt6363_psc.c). Nothing in our system satisfies it -> the PMIC
+  power-cycles the phone after 1.5-26 min (also on 7.3.3, also unplugged).
+- Fix: `mt6363-keys-polled` logs the state and has sysfs `spt_enable`
+  (/sys/bus/spmi/devices/0-04/spt_enable); `/pacman-init` writes 0 at every boot. Verified: 30 min
+  without reset. Cost: a fully hung kernel is no longer power-cycled by the PMIC (mtk-wdt and the
+  long power-key press still work). Needs the SPMI DTB (test-P).
+- Investigation notes (kept for reference):
 - Silent resets 96-315 s after boot: no oops/panic, no thermal/critical message (console loglevel 8),
   kernel log just stops. Happened with the keys image with AND without key polling, and with the same
   kernel + test-U DTB where SPMI never probes -> NOT caused by our SPMI/keys code.
@@ -194,11 +204,29 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   signal?) is unknown; no downstream kernel driver touches it.
 - Earlier the same day images ran 15 min without resets. Next step: bisect — boot an older image
   (pacman-login-boot.img + pacman-usb1-vendor_boot.img, stock Android ramdisk) and wait 10 min.
-- Reading LK's log from mainline: needs `# CONFIG_STRICT_DEVMEM is not set` (DEBUG block in
-  pacman.config, revert later), then on the phone:
+- Reading LK's log from mainline: needs a kernel built with `# CONFIG_STRICT_DEVMEM is not set`
+  (pacman.config sets it =y again; flip it for debugging), then on the phone:
   `dd if=/dev/mem bs=4096 skip=$((0x33ffb0000/4096)) count=64 | strings | grep -E "RGU|PMIC|SELFWDT"`
   (mblock-10-log_store, 256 KiB at 0x33ffb0000, contains preloader+LK log of the current boot).
 - Normal-boot reference: logs/pl_lk.txt (stock, SELFWDT=0x0).
+
+## XFCE desktop (WORKS 2026-11-09)
+- `DESKTOP=1 tools/build-alpine.sh` -> `~/pacman/alpine/rootfs-desktop`: xorg-server, xf86-video-fbdev,
+  xinit, xfwm4, xfce4-panel, xfdesktop, xfce4-session, xfce4-settings, xfce4-terminal, font-dejavu,
+  dbus(-x11), x11vnc. Mesa's libLLVM/libgallium/dri removed (no GPU; 649 MB full xfce4 -> 169 MB).
+  `ROOT=.../rootfs-desktop COMP=xz OUT=... tools/build-vendor-boot.sh hybrid/test-P.img` (gzip would
+  not fit LK's 64 MiB ramdisk buffer comfortably; kernel has RD_XZ, xz needs --check=crc32).
+- /etc/X11/xorg.conf.d/10-pacman.conf: fbdev on /dev/fb0, ShadowFB, Rotate CW, glx disabled, no
+  input devices (x11vnc injects). XFCE: Gdk WindowScalingFactor 2, xfwm4 theme Default-xhdpi, no compositing.
+- `/usr/local/bin/pacman-desktop` (started by /pacman-init at ~12 s instead of getty; restarted on
+  exit, login prompt after 3 quick failures): does what skipped apk post-install scripts would do
+  (machine-id, **update-mime-database**, fc-cache, pixbuf loaders, schemas, icon caches), system dbus,
+  x11vnc on 172.16.42.1:5900 (no password, USB link only), `xinit /etc/xdg/xfce4/xinitrc -- Xorg :0 vt1`.
+  Session output: /tmp/xfce-session.log, last lines also in kmsg ("pacman-desktop:").
+- Pitfall found: without /usr/share/mime/mime.cache gdk-pixbuf cannot load icons and the session
+  aborts in Wnck (default_icon_at_size) 1 s after start; Xorg.0.log looks clean in that case.
+- PC: `gvncviewer 172.16.42.1:0`. Idle: ~520 MB RAM, load 0.4, 41 °C. Only hicolor icons; clock
+  shows 1970 (no RTC driver).
 
 ## Alpine as root filesystem (stage 4, WORKS 2026-11-09)
 - `tools/build-vendor-boot.sh [dtb]`: gzip newc cpio of `~/pacman/alpine/rootfs` (root-owned) replaces
@@ -244,7 +272,9 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 1. Done: USB network (verified: DHCP, ping, telnet port, 200 MB at 42 MB/s md5-checked).
    Orange State found and removed (live); boot `pacman-ovl-boot.img` to confirm the driver version.
 2. Alpine in RAM: tooling built (see Alpine section) -> test on the phone.
-3. Xorg + xf86-video-fbdev (rotate to landscape) + XFCE, controlled from the PC via x11vnc.
+3. Done: Xorg + xf86-video-fbdev (landscape) + slim XFCE, controlled from the PC via x11vnc.
+   The owner does NOT plan to move the phone to Linux permanently: only boot_b/vendor_boot_b, always
+   return to stock.
 4. Later: replace the Android vendor ramdisk with our own (≈60 MiB room), cpufreq-hw, clean
    minimal DTB (without copied reserved regions), PMIC (MT6363/MT6368 over SPMI) -> keys,
    regulators, UFS (read-only first), touch, battery. References: postmarketOS
