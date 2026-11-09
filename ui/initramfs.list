@@ -14,10 +14,9 @@ dir /pacman 0755 0 0
 dir /pacman/bin 0755 0 0
 file /pacman/bin/busybox ../busybox/busybox 0755 0 0
 file /pacman/bin/pacman-dash ../port/ui/pacman-dash 0755 0 0
-# Disabled until the kernel is slimmed: with fastfetch the Image (0x2c97a00, lz4 20.3 MiB)
-# bootloops in LK; 0x2b67a00 / 19.1 MiB still boots. Push it at runtime instead:
-#   port/tools/pacsh.py push ~/pacman/fastfetch/fastfetch /tmp/fastfetch -x
-#file /pacman/bin/fastfetch ../fastfetch/fastfetch 0755 0 0
+# Needs the slim kernel (pacman.config): with the full defconfig this pushed the Image over
+# LK's limit (see CLAUDE.md).
+file /pacman/bin/fastfetch ../fastfetch/fastfetch 0755 0 0
 dir /pacman/etc 0755 0 0
 file /pacman/etc/os-release ../port/ui/os-release 0644 0 0
 file /pacman-init ../port/ui/pacman-init.sh 0755 0 0

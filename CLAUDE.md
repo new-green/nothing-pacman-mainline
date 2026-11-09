@@ -75,12 +75,15 @@ Build / flash commands: see README.md.
   Images: out/pacman-usb1b-boot.img + out/pacman-usb1-vendor_boot.img (current known-good pair).
 - Tip: pstore logs contain bit flips -> file(1) says "data"; grep needs -a (`command grep -a`).
 
-## LK kernel size limit (found 2026-11-09) — READ BEFORE GROWING THE KERNEL
+## LK kernel size limit (found + fixed 2026-11-09) — READ BEFORE GROWING THE KERNEL
 - usb2: Image 0x2b67a00 (43.4 MiB), lz4 20 077 733 (19.1 MiB) -> boots.
   usb2b (+fastfetch in initramfs): Image 0x2c97a00 (44.6 MiB), lz4 21 316 789 (20.3 MiB) -> LK bootloop
   (preloader every 13-20 s, kernel never reaches USB). Limit is either ~20 MiB compressed or ~44 MiB
   (0x2c00000) decompressed; not known which. Stock kernel lz4 = 0x13bbd9b (19.7 MiB).
-- Always check both sizes before flashing; keep a margin. Slimming defconfig is the fix.
+- Always check both sizes before flashing; keep a margin.
+- FIXED by the slim config (pacman.config disables all 52 non-MediaTek ARCH_* platforms, =y 3338 -> 2211):
+  Image 0x1d55a00 (29.3 MiB), lz4 15.8 MiB incl. fastfetch. Boots; init starts at 0.39 s (was 0.72 s).
+  Known-good pair now: out/pacman-slim-boot.img + out/pacman-usb1-vendor_boot.img.
 
 ## Phone shell from the PC: tools/pacsh.py (stage 2)
 - `pacsh.py run 'cmd'` runs a command over /dev/ttyACM0; `pacsh.py push LOCAL REMOTE [-x]` copies a
