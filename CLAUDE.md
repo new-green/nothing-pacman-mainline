@@ -80,9 +80,10 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
   `tools/build-dtb.sh --check` verifies all committed `.img` files.
 - **Before every flash check the kernel size** (LK rule 5). Name new images, don't overwrite known-good ones.
 - Checkpoints live in `~/pacman/checkpoint/<YYYY-MM-DD-HHMM>/` (owner's convention: folder named by
-  the time taken; never in archive/): `tools/checkpoint.sh "note" [boot.img vendor_boot.img]` writes
-  port.bundle, the kernel-commit bundle, the image pair, README.txt and a SHA256SUMS of every file,
-  and tags both repos (`checkpoint-<stamp>`, `pacman-checkpoint-<stamp>`). The kernel commits exist
+  the time taken; never in archive/): `tools/checkpoint.sh --new-check ["note"] [--images boot vendor_boot]`
+  writes port.bundle, the kernel-commit bundle, the image pair, kernel.config, versions.txt, the
+  Alpine package lists, phone dmesg + screenshot when the phone answers, README.txt and a
+  SHA256SUMS of every file, and tags both repos (`--list`, `--verify [stamp]` also exist) (`checkpoint-<stamp>`, `pacman-checkpoint-<stamp>`). The kernel commits exist
   only locally (+ as kernel-patches/), so take a checkpoint after changing the kernel branch.
   First one: `checkpoint/2026-11-09-2356/` (tag `checkpoint-2026-11-09-xfce`, pushed).
 
