@@ -6,6 +6,7 @@
 #
 # - mounts proc/sys/devtmpfs/tmpfs, installs busybox applet links
 # - starts pacman-dash on fb0
+# - USB network: usb0 = 172.16.42.1, DHCP for the PC, telnet (PC: telnet 172.16.42.1)
 # - keeps a root shell on /dev/ttyGS0 (USB CDC ACM; PC: picocom /dev/ttyACM0)
 
 BB=/pacman/bin/busybox
@@ -29,6 +30,24 @@ hostname pacman
 echo "pacman-init: busybox $($BB | $BB head -1 | $BB cut -d' ' -f2)" > /dev/kmsg
 
 pacman-dash &
+
+# USB network (g_cdc ECM function -> usb0). Phone 172.16.42.1; the PC gets
+# 172.16.42.2 from udhcpd. No router option is handed out, so the PC keeps
+# its own default route. telnetd: root shell without password, bound to the
+# USB link only (the PC does not forward it anywhere).
+$BB mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+ip link set lo up
+if ip link show usb0 > /dev/null 2>&1; then
+	ip addr add 172.16.42.1/24 dev usb0
+	ip link set usb0 up
+	touch /tmp/udhcpd.leases
+	udhcpd /pacman/etc/udhcpd.conf
+	telnetd -b 172.16.42.1 -l /pacman/bin/sh
+	echo "pacman-init: usb0 172.16.42.1, udhcpd + telnetd up" > /dev/kmsg
+else
+	echo "pacman-init: no usb0 (USB network gadget missing?)" > /dev/kmsg
+fi
 
 # Shell on ttyGS0, respawned when it exits (logout, cable unplug -> SIGHUP).
 # This script is non-interactive, so its children are not process group

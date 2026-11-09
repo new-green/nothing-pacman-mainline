@@ -13,7 +13,10 @@
  *  - periodically cleans the CPU cache over it and kicks one frame out
  *    (display mutex enable + DSI_START), the same writes MediaTek's own
  *    driver uses for a command-mode frame,
- *  - dumps the relevant DSI / mutex registers to the kernel log.
+ *  - dumps the relevant DSI / mutex registers to the kernel log,
+ *  - turns off any OVL layer LK left enabled that does not scan out our
+ *    framebuffer: the unlocked-bootloader ("Orange State") warning sits in
+ *    such a layer (ovl0 L1) on top of everything we draw.
  *
  * Bring-up hack, not meant for upstream as is.
  */
@@ -24,6 +27,7 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/workqueue.h>
 #include <asm/cacheflush.h>
@@ -38,6 +42,19 @@
 #define MUTEX_MAX		16
 
 #define REFRESH_MS		50
+
+/* MT6886 OVL layer registers (MediaTek's mtk_disp_ovl.c) */
+#define OVL_SRC_CON		0x002c	/* bits 0-3: layer L0-L3 enable */
+#define OVL_DATAPATH_EXT_CON	0x0324	/* bits 0-2: extended layer EL0-EL2 enable */
+#define OVL_L_ADDR(n)		(0x0f40 + 0x20 * (n))
+#define OVL_EL_ADDR(n)		(0x0fb0 + 0x10 * (n))
+#define OVL_NUM_LAYERS		4
+#define OVL_NUM_EXT_LAYERS	3
+
+static bool hide_lk_layers = true;
+module_param(hide_lk_layers, bool, 0444);
+MODULE_PARM_DESC(hide_lk_layers,
+		 "Turn off OVL layers left on by LK that do not show our framebuffer (default: yes)");
 
 struct pacman_cmdfb {
 	struct device *dev;
@@ -136,6 +153,56 @@ static void pacman_cmdfb_dump(struct pacman_cmdfb *p)
 	dev_info(p->dev, "using mutex %d\n", p->mutex_id);
 }
 
+/*
+ * Clear the enable bit of every layer whose buffer is not our framebuffer.
+ * Each 'enable' bit n pairs with the layer address register addr(n).
+ */
+static u32 pacman_cmdfb_hide_layers(struct pacman_cmdfb *p, struct device_node *np,
+				    void __iomem *ovl, u32 enable, int count,
+				    unsigned int (*addr)(int), const char *kind)
+{
+	u32 fb = lower_32_bits(p->paddr);
+	int n;
+
+	for (n = 0; n < count; n++) {
+		u32 a = readl(ovl + addr(n));
+
+		if (!(enable & BIT(n)) || a == fb)
+			continue;
+		enable &= ~BIT(n);
+		dev_info(p->dev, "%pOF: hiding LK layer %s%d (buffer %08x)\n", np, kind, n, a);
+	}
+	return enable;
+}
+
+static unsigned int ovl_l_addr(int n)  { return OVL_L_ADDR(n); }
+static unsigned int ovl_el_addr(int n) { return OVL_EL_ADDR(n); }
+
+static void pacman_cmdfb_hide_lk_layers(struct pacman_cmdfb *p)
+{
+	struct device_node *np;
+
+	for_each_compatible_node(np, NULL, "mediatek,mt6886-disp-ovl") {
+		void __iomem *ovl = of_iomap(np, 0);
+		u32 con, ext, new;
+
+		if (!ovl)
+			continue;
+
+		con = readl(ovl + OVL_SRC_CON);
+		new = pacman_cmdfb_hide_layers(p, np, ovl, con, OVL_NUM_LAYERS, ovl_l_addr, "L");
+		if (new != con)
+			writel(new, ovl + OVL_SRC_CON);
+
+		ext = readl(ovl + OVL_DATAPATH_EXT_CON);
+		new = pacman_cmdfb_hide_layers(p, np, ovl, ext, OVL_NUM_EXT_LAYERS, ovl_el_addr, "EL");
+		if (new != ext)
+			writel(new, ovl + OVL_DATAPATH_EXT_CON);
+
+		iounmap(ovl);
+	}
+}
+
 static int pacman_cmdfb_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -184,6 +251,8 @@ static int pacman_cmdfb_probe(struct platform_device *pdev)
 	}
 
 	pacman_cmdfb_dump(p);
+	if (hide_lk_layers)
+		pacman_cmdfb_hide_lk_layers(p);
 
 	strscpy(info->fix.id, "pacman-cmdfb", sizeof(info->fix.id));
 	info->fix.type = FB_TYPE_PACKED_PIXELS;

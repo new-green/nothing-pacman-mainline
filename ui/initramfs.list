@@ -20,4 +20,5 @@ file /pacman/bin/pacman-reboot ../port/ui/pacman-reboot 0755 0 0
 file /pacman/bin/fastfetch ../fastfetch/fastfetch 0755 0 0
 dir /pacman/etc 0755 0 0
 file /pacman/etc/os-release ../port/ui/os-release 0644 0 0
+file /pacman/etc/udhcpd.conf ../port/ui/udhcpd.conf 0644 0 0
 file /pacman-init ../port/ui/pacman-init.sh 0755 0 0

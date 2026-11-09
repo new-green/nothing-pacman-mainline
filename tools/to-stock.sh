@@ -59,7 +59,8 @@ if ! fb_present; then
 	if [[ "$(adb get-state 2>/dev/null)" == "device" ]]; then
 		say "Phone runs Android: adb reboot bootloader"
 		adb reboot bootloader
-	elif [[ -e /dev/ttyACM0 && -n "$(lsusb -d 0525:a4a7 2>/dev/null)" ]]; then
+	elif [[ -e /dev/ttyACM0 && -n "$(lsusb -d 0525:a4a7 2>/dev/null; lsusb -d 0525:a4aa 2>/dev/null)" ]]; then
+		# 0525:a4a7 = g_serial (stage 2), 0525:a4aa = g_cdc (serial + USB network)
 		# mainline + busybox shell on ttyGS0 (stage 2): reboot-mode -> LK fastboot.
 		# The shell dies with the reboot, so pacsh's timeout is expected.
 		say "Phone runs mainline: pacman-reboot bootloader (USB serial)"
