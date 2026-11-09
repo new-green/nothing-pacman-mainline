@@ -63,8 +63,14 @@ if ! fb_present; then
 		# 0525:a4a7 = g_serial (stage 2), 0525:a4aa = g_cdc (serial + USB network)
 		# mainline + busybox shell on ttyGS0 (stage 2): reboot-mode -> LK fastboot.
 		# The shell dies with the reboot, so pacsh's timeout is expected.
-		say "Phone runs mainline: pacman-reboot bootloader (USB serial)"
-		python3 -I "$(dirname "$0")/pacsh.py" run 'pacman-reboot bootloader' -t 3 >/dev/null 2>&1 || true
+		# Prefer telnet (own shell): the serial shell may be running conspy for the owner.
+		if ping -c 1 -W 1 172.16.42.1 >/dev/null 2>&1; then
+			say "Phone runs mainline: pacman-reboot bootloader (USB network, telnet)"
+			python3 -I "$(dirname "$0")/pacsh.py" --net run 'pacman-reboot bootloader' -t 3 >/dev/null 2>&1 || true
+		else
+			say "Phone runs mainline: pacman-reboot bootloader (USB serial)"
+			python3 -I "$(dirname "$0")/pacsh.py" run 'pacman-reboot bootloader' -t 3 >/dev/null 2>&1 || true
+		fi
 	else
 		say "Waiting for fastboot (power + volume down, short press)..."
 	fi

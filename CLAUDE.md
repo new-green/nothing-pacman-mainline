@@ -37,13 +37,15 @@ User-facing command cheat sheet: `docs/COMMANDS.md`
 | Shell | busybox root shell on ttyGS0 (PC: /dev/ttyACM0), kernel console on ttyGS0 |
 | Thermal | `mtk_therm_intf`: cpu0..7 + gpu zones from MCUPM firmware SRAM, critical 95 °C |
 | Reboot | `pacman-reboot bootloader` -> LK fastboot (no key combo needed) |
-| UI | `pacman-dash` on fb0: uptime, per-core load + °C, GPU °C, memory, loadavg |
+| UI | boot log on fbcon, then `pacman login:` on tty1 (type from the PC: `conspy 1`); `pacman-dash` on demand |
 | Missing | clocks, pinctrl, PMIC (SPMI), regulators, UFS, input (touch/keys), battery, Wi-Fi, GPU |
 
 **Images** (`out/`, always paired with `out/pacman-usb1-vendor_boot.img`, DTB = `hybrid/test-U.img`):
 - `pacman-net-boot.img` — newest **known-good**: serial shell, USB network, thermal, reboot, temp dash.
-- `pacman-ovl-boot.img` — net + cmdfb hides LK's Orange State layer at probe. Not yet booted
-  (the same register write worked by hand with devmem).
+- `pacman-login-boot.img` — newest: ovl + boot log on fbcon then getty login on tty1 (root, no
+  password), /bin -> /pacman/bin, `alpine` command. Login tested (first build lacked the /bin fix,
+  fixed live, then rebuilt).
+- `pacman-ovl-boot.img` — net + cmdfb hides LK's Orange State layer at probe (tested).
 - `pacman-dashtemp-boot.img` — previous good (g_serial only, no network).
 - Older: `pacman-therm-boot.img`, `pacman-slim-boot.img`, `pacman-usb2-boot.img` (all good), `pacman-usb2b-boot.img` (bootloops, too big).
 
@@ -53,7 +55,8 @@ User-facing command cheat sheet: `docs/COMMANDS.md`
 - Back to stock: `bash tools/to-stock.sh -n <name>` — reboots mainline into fastboot via
   `pacman-reboot bootloader` (or Android via adb), checks slot b, flashes stock boot_b/vendor_boot_b,
   waits for Android, saves pstore console log to `~/pacman/logs/log-<name>-<date>.txt`.
-- Talk to the phone: `tools/pacsh.py run 'cmd' [-t s]`, `tools/pacsh.py push LOCAL REMOTE [-x]`
+- Screenshot: `tools/screenshot.py [out.png] [--scale f]` (fb0 over telnet/nc, PC-initiated).
+- Talk to the phone: `tools/pacsh.py [--net] run 'cmd' [-t s]`, `tools/pacsh.py [--net] push LOCAL REMOTE [-x]`
   (gzip+base64 over ttyACM0, md5-checked, ~16 MB/s into RAM). Close picocom first
   (`pgrep -a picocom`), two readers split the output. Owner uses `picocom -b 115200 /dev/ttyACM0`.
 - Build: `make -C port/ui` (pacman-dash, pacman-reboot); `tools/build-busybox.sh`,
@@ -93,8 +96,10 @@ User-facing command cheat sheet: `docs/COMMANDS.md`
    LK loads the ramdisk into a separate 64 MiB buffer (mb_ramdisk @0x66f00000; stock Android
    vendor ramdisk uses 29.6 MiB of it).
 6. LK's Android vendor ramdisk is unpacked **on top of** our built-in initramfs and brings `/bin`,
-   `/etc` (dangling link to /system/etc), `/init`… -> everything of ours lives under `/pacman/`,
-   `rdinit=/pacman-init`.
+   `/etc` and `/bin` (dangling links to /system/...), `/init`… -> everything of ours lives under
+   `/pacman/`, `rdinit=/pacman-init`; init re-points /etc and /bin to /pacman/{etc,bin}.
+   Anything that execs a hard-coded /bin/... (getty -> /bin/login!) or follows an absolute
+   symlink from outside a chroot (Alpine's /bin/sh -> /bin/busybox) resolves against OUR root.
 7. Kernel cmdline is built in (`CMDLINE_FORCE`); edit it in `port/pacman.config`.
 8. Reset timing is not a success signal; trust USB enumeration (PC `journalctl -k`) and pstore.
 
@@ -141,7 +146,22 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   all optional libs off), pacman-dash, pacman-reboot. `/pacman/etc`: os-release, udhcpd.conf.
 - cmdline: `console=ttyGS0,115200 console=tty0` (tty0 last = /dev/console), ramoops params, panic=5.
 
+## Alpine userspace (stage 3, WORKS 2026-11-09: 3.24.4, bash, fastfetch with Alpine logo)
+- `tools/build-alpine.sh [pkgs]`: Alpine 3.24.4 aarch64 minirootfs (sha256 + GPG, ncopa fingerprint
+  pinned) + packages via Alpine's x86_64 `apk.static` 3.0.9 on the PC (`--root --arch aarch64
+  --usermode --no-scripts`, signatures checked) -> `~/pacman/alpine/alpine-rootfs.tar.gz` (6.3 MB,
+  root-owned). Default extras: bash htop nano fastfetch. No root needed on the PC.
+- `tools/alpine-push.sh`: installs `/pacman/bin/alpine` (= `ui/alpine-enter.sh`) via `pacsh --net`, starts
+  `nc | tar x` into /tmp/alpine on the phone (setsid, stdin /dev/null), sends the tarball PC -> phone.
+- `alpine` on the phone: bind-mounts proc/sys/dev/devpts + tmpfs /tmp, `chroot /tmp/alpine` with a
+  clean env; `alpine CMD` runs one command. Our init/dash/network keep running outside.
+- The phone has no internet (no NAT on the PC, ufw): add packages on the PC and push again.
+
 ## Pitfalls
+- The serial shell (ttyACM0) is SHARED with the owner's picocom. If something interactive runs
+  there (conspy!), pacsh keystrokes go to it: once conspy forwarded `stty -echo` + a push into
+  the owner's tty1 login shell. With the net image ALWAYS use `pacsh.py --net` (telnet, own pty)
+  and check `pgrep -a picocom` before using the serial port at all.
 - PC runs **ufw** (default deny incoming): phone -> PC TCP connections are blocked. Always let
   the PC initiate (PC -> phone nc/telnet/VNC). Don't change the owner's firewall without asking.
 - Background jobs in the interactive ttyGS0 shell get SIGTTIN if they read the tty (busybox nc
@@ -159,7 +179,7 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 ## Roadmap (agreed with owner: "real Linux desktop")
 1. Done: USB network (verified: DHCP, ping, telnet port, 200 MB at 42 MB/s md5-checked).
    Orange State found and removed (live); boot `pacman-ovl-boot.img` to confirm the driver version.
-2. Alpine Linux aarch64 rootfs built on the PC, transferred over USB network into RAM, switch_root.
+2. Alpine in RAM: tooling built (see Alpine section) -> test on the phone.
 3. Xorg + xf86-video-fbdev (rotate to landscape) + XFCE, controlled from the PC via x11vnc.
 4. Later: replace the Android vendor ramdisk with our own (≈60 MiB room), cpufreq-hw, clean
    minimal DTB (without copied reserved regions), PMIC (MT6363/MT6368 over SPMI) -> keys,

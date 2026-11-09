@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Talk to the phone's busybox shell on /dev/ttyACM0 (g_serial, stage 2).
+"""Talk to the phone's busybox shell.
 
-  pacsh.py run 'uname -a' [-t 10]     run a command, print its output
-  pacsh.py push LOCAL REMOTE [-x]     copy a file into the phone's RAM
-                                      (gzip + base64, md5-checked; -x: chmod +x)
+  pacsh.py [--net] run 'uname -a' [-t 10]   run a command, print its output
+  pacsh.py [--net] push LOCAL REMOTE [-x]   copy a file into the phone's RAM
+                                            (gzip + base64, md5-checked; -x: chmod +x)
 
-Close picocom first: two readers on one tty split the output.
+Default: the shell on /dev/ttyACM0. That shell is shared with the owner's picocom
+session: whatever runs there in the foreground (e.g. conspy!) gets our keystrokes.
+--net: telnet to the phone (--host, default 172.16.42.1, net image) for a fresh shell of
+our own on every call; never collides with picocom/conspy. Prefer it when available.
 """
-import argparse, base64, gzip, hashlib, os, select, sys, termios, time
+import argparse, base64, gzip, hashlib, os, re, select, socket, sys, termios, time
 
 DEV = os.environ.get("PACSH_DEV", "/dev/ttyACM0")
 
@@ -84,15 +87,60 @@ class Phone:
         return len(raw), len(payload), dt, want
 
 
+IAC_RE = re.compile(rb"\xff[\xfb-\xfe].|\xff[\xf0-\xfa]")   # telnet negotiation
+
+
+class NetPhone(Phone):
+    """Same API over telnet (busybox telnetd on the USB network)."""
+
+    def __init__(self, host="172.16.42.1", port=23):
+        self.sock = socket.create_connection((host, port), timeout=10)
+        self.sock.settimeout(0.2)
+        self.drain(1.0)                           # banner, prompt, negotiation
+
+    def _recv(self):
+        try:
+            d = self.sock.recv(65536)
+        except socket.timeout:
+            return b""
+        if not d:
+            raise ConnectionError("telnet connection closed by the phone")
+        return IAC_RE.sub(b"", d)
+
+    def drain(self, t=0.3):
+        end = time.time() + t
+        while time.time() < end:
+            self._recv()
+
+    def write(self, data):
+        self.sock.settimeout(60)                  # big pushes wait on the phone's pty
+        try:
+            self.sock.sendall(data)
+        finally:
+            self.sock.settimeout(0.2)
+
+    def wait_for(self, token, timeout):
+        buf = b""
+        end = time.time() + timeout
+        while time.time() < end and token not in buf:
+            buf += self._recv()
+        if token not in buf:
+            raise TimeoutError("no %r within %ss; got: %r" % (token, timeout, buf[-300:]))
+        return buf
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--net", action="store_true",
+                   help="use telnet over the USB network instead of /dev/ttyACM0")
+    p.add_argument("--host", default="172.16.42.1", help="phone address for --net")
     sub = p.add_subparsers(dest="op", required=True)
     r = sub.add_parser("run"); r.add_argument("cmd"); r.add_argument("-t", type=float, default=10)
     s = sub.add_parser("push"); s.add_argument("local"); s.add_argument("remote")
     s.add_argument("-x", action="store_true")
     a = p.parse_args()
 
-    ph = Phone()
+    ph = NetPhone(a.host) if a.net else Phone()
     if a.op == "run":
         sys.stdout.write(ph.run(a.cmd, a.t))
     else:

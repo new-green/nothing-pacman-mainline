@@ -15,10 +15,17 @@ dir /pacman/bin 0755 0 0
 file /pacman/bin/busybox ../busybox/busybox 0755 0 0
 file /pacman/bin/pacman-dash ../port/ui/pacman-dash 0755 0 0
 file /pacman/bin/pacman-reboot ../port/ui/pacman-reboot 0755 0 0
+file /pacman/bin/alpine ../port/ui/alpine-enter.sh 0755 0 0
 # Needs the slim kernel (pacman.config): with the full defconfig this pushed the Image over
 # LK's limit (see CLAUDE.md).
 file /pacman/bin/fastfetch ../fastfetch/fastfetch 0755 0 0
 dir /pacman/etc 0755 0 0
 file /pacman/etc/os-release ../port/ui/os-release 0644 0 0
 file /pacman/etc/udhcpd.conf ../port/ui/udhcpd.conf 0644 0 0
+file /pacman/etc/passwd ../port/ui/passwd 0644 0 0
+file /pacman/etc/group ../port/ui/group 0644 0 0
+file /pacman/etc/shadow ../port/ui/shadow 0600 0 0
+file /pacman/etc/issue ../port/ui/issue 0644 0 0
+file /pacman/etc/profile ../port/ui/profile 0644 0 0
+file /pacman/etc/motd ../port/ui/motd 0644 0 0
 file /pacman-init ../port/ui/pacman-init.sh 0755 0 0
