@@ -13,7 +13,7 @@ layout from the [README](../README.md). Flash commands only ever write **`boot_b
 adb reboot bootloader
 fastboot getvar current-slot                 # must be "b"
 fastboot flash boot_b        ~/pacman/out/pacman-boot.img
-fastboot flash vendor_boot_b ~/pacman/out/pacman-vendor_boot.img
+fastboot flash vendor_boot_b ~/pacman/out/pacman-alpine-vendor_boot.img
 fastboot reboot
 
 # ... try things on the phone (sections 2-4) ...
@@ -125,7 +125,19 @@ free -m; cat /proc/loadavg; top
 About 300 busybox commands (`ls`, `vi`, `top`, `devmem`, ...) are in `/pacman/bin`.
 Critical temperature is **95 °C**: above it the kernel powers the phone off.
 
-### Alpine Linux (in RAM)
+### Alpine Linux
+With `pacman-alpine-vendor_boot.img` the phone boots straight into Alpine: log in on the panel
+(`conspy 1`), over telnet or on the serial shell — you are in Alpine (`cat /etc/alpine-release`),
+with `apk`, `bash`, `htop`, `fastfetch`, and our tools from `/pacman/bin` in `PATH`.
+
+```bash
+# PC: build Alpine and the vendor_boot image (append package names to add more)
+bash ~/pacman/port/tools/build-alpine.sh vim python3
+bash ~/pacman/port/tools/build-vendor-boot.sh          # -> ~/pacman/out/pacman-alpine-vendor_boot.img
+```
+
+With the stock vendor_boot (Android ramdisk) Alpine can still be pushed into RAM and entered
+with `chroot`:
 ```bash
 # PC: build it (once; append package names to add more)
 bash ~/pacman/port/tools/build-alpine.sh

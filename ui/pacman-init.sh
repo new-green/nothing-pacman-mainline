@@ -1,8 +1,9 @@
 #!/pacman/bin/busybox sh
 # PID 1 on the phone (kernel: rdinit=/pacman-init, built-in initramfs).
 #
-# Everything of ours lives under /pacman/: LK's Android ramdisk is unpacked
-# on top of the built-in initramfs and would overwrite /bin, /etc, /init ...
+# Everything of ours lives under /pacman/: LK's vendor ramdisk (stock: Android,
+# ours: Alpine Linux) is unpacked on top of the built-in initramfs and would
+# overwrite /bin, /etc, /init ...
 #
 # - mounts proc/sys/devtmpfs/tmpfs, installs busybox applet links
 # - panel: boot messages on fbcon, then a login prompt on tty1 (root, no password)
@@ -31,6 +32,17 @@ done
 hostname pacman
 
 echo "pacman-init: busybox $($BB | $BB head -1 | $BB cut -d' ' -f2)" > /dev/kmsg
+
+# Alpine as the root filesystem (tools/build-vendor-boot.sh puts it into vendor_boot's
+# ramdisk, which the kernel unpacks on top of us): prefer its programs, keep ours
+# reachable, give it /run. Logins then land in Alpine.
+if [ -f /etc/alpine-release ]; then
+	export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/pacman/bin
+	export HOME=/root
+	$BB mkdir -p /run
+	$BB mount -t tmpfs -o mode=0755 tmpfs /run
+	echo "pacman-init: root filesystem is Alpine Linux $($BB cat /etc/alpine-release)" > /dev/kmsg
+fi
 
 # Panel: kernel + init messages scroll on fbcon (tty1). Once the deferred-probe
 # summary (~10 s) has gone by, quiet the console and show a login prompt on tty1.

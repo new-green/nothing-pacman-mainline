@@ -46,7 +46,11 @@ kernel commits on `linux/` branch `pacman`, regenerate the series:
 | UI | boot log on fbcon, then `pacman login:` on tty1 (type from the PC: `conspy 1`); `pacman-dash` on demand |
 | Missing | clocks, pinctrl, PMIC (SPMI), regulators, UFS, input (touch/keys), battery, Wi-Fi, GPU |
 
-**Images** (`out/`, always paired with `out/pacman-usb1-vendor_boot.img`, DTB = `hybrid/test-U.img`):
+**Images** (`out/`):
+- `pacman-alpine-boot.img` + `pacman-alpine-vendor_boot.img` — newest **known-good** (2026-11-09):
+  boots straight into Alpine 3.24 (Alpine replaces Android's platform ramdisk fragment in
+  vendor_boot, `tools/build-vendor-boot.sh`); login on tty1, USB net/serial, thermal, reboot.
+  The images below pair with `pacman-usb1-vendor_boot.img` (stock vendor_boot + test-U DTB).
 - `pacman-net-boot.img` — newest **known-good**: serial shell, USB network, thermal, reboot, temp dash.
 - `pacman-login-boot.img` — newest: ovl + boot log on fbcon then getty login on tty1 (root, no
   password), /bin -> /pacman/bin, `alpine` command. Login tested (first build lacked the /bin fix,
@@ -153,7 +157,17 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   all optional libs off), pacman-dash, pacman-reboot. `/pacman/etc`: os-release, udhcpd.conf.
 - cmdline: `console=ttyGS0,115200 console=tty0` (tty0 last = /dev/console), ramoops params, panic=5.
 
-## Alpine userspace (stage 3, WORKS 2026-11-09: 3.24.4, bash, fastfetch with Alpine logo)
+## Alpine as root filesystem (stage 4, WORKS 2026-11-09)
+- `tools/build-vendor-boot.sh [dtb]`: gzip newc cpio of `~/pacman/alpine/rootfs` (root-owned) replaces
+  fragment 00 (type platform) of the stock vendor_boot via `work/vb_args.txt`; fragment 01 (recovery)
+  and bootconfig unchanged. 7.6 MB image. LK accepts it.
+- The kernel unpacks it over the built-in initramfs: / = Alpine. `/pacman-init` stays PID 1, sees
+  /etc/alpine-release -> Alpine PATH first (+/pacman/bin), mounts /run; getty/telnet/serial logins
+  land in Alpine (root password emptied by build-alpine.sh; Alpine's /etc/issue on the panel).
+- / also contains leftovers from LK's other ramdisks (init, init.real, kernelsu.ko, system/,
+  second_stage_resources/...): from init_boot's generic ramdisk and the recovery fragment. Unused.
+
+## Alpine userspace in a chroot (stage 3, WORKS 2026-11-09: 3.24.4, bash, fastfetch with Alpine logo)
 - `tools/build-alpine.sh [pkgs]`: Alpine 3.24.4 aarch64 minirootfs (sha256 + GPG, ncopa fingerprint
   pinned) + packages via Alpine's x86_64 `apk.static` 3.0.9 on the PC (`--root --arch aarch64
   --usermode --no-scripts`, signatures checked) -> `~/pacman/alpine/alpine-rootfs.tar.gz` (6.3 MB,

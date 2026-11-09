@@ -56,15 +56,23 @@ tar -xpzf "$DL/$mini" -C "$ROOT"
 
 # --- small customisations ---
 echo pacman > "$ROOT/etc/hostname"
+# root without password, like our busybox system (console/USB access only)
+sed -i 's/^root:[^:]*:/root::/' "$ROOT/etc/shadow"
 cat > "$ROOT/etc/motd" <<'EOF'
 
   Alpine Linux on the Nothing Phone (2a) -- mainline kernel, running from RAM.
   Nothing here survives a reboot. No internet: install packages on the PC
-  (tools/build-alpine.sh <package...>) and push again.
+  (tools/build-alpine.sh <package...>), then rebuild the vendor_boot image
+  (tools/build-vendor-boot.sh) or push into a running phone (tools/alpine-push.sh).
+
+  fastfetch       system info          pacman-dash     dashboard on the panel
+  pacman-reboot   reboot [bootloader|recovery|poweroff]
 
 EOF
 cat > "$ROOT/etc/profile.d/pacman.sh" <<'EOF'
 export PS1='\[\e[1;32m\]alpine\[\e[0m\]@\h:\w# '
+# our static tools from the kernel's built-in initramfs (pacman-reboot, pacman-dash, ...)
+case ":$PATH:" in *:/pacman/bin:*) ;; *) [ -d /pacman/bin ] && PATH="$PATH:/pacman/bin" ;; esac
 EOF
 
 tar --numeric-owner --owner=0 --group=0 -czf "$OUT" -C "$ROOT" .
