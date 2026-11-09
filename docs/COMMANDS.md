@@ -189,9 +189,12 @@ cd ~/pacman/linux && export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 make -j$(nproc) Image.lz4
 mkbootimg --header_version 4 --kernel arch/arm64/boot/Image.lz4 -o ../out/pacman-NEW-boot.img
 
-# vendor_boot (only when the device tree changes; current: hybrid/test-U.img)
-cd ~/pacman/work && cp ../port/hybrid/test-U.img vb/dtb
-eval mkbootimg $(cat vb_args.txt) --vendor_boot ../out/pacman-NEW-vendor_boot.img
+# device tree: compile + wrap for LK (current: hybrid/test-P.dts); --check verifies all images
+bash ~/pacman/port/tools/build-dtb.sh ~/pacman/port/hybrid/test-P.dts
+bash ~/pacman/port/tools/build-dtb.sh --check
+
+# vendor_boot with Alpine as ramdisk (see section 4) and that device tree
+bash ~/pacman/port/tools/build-vendor-boot.sh ~/pacman/port/hybrid/test-P.img
 ```
 
 ### Check the size before flashing

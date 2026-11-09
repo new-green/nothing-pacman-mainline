@@ -3,7 +3,7 @@
 # into Alpine without the PC:
 #   ~/pacman/out/pacman-alpine-vendor_boot.img
 #
-#   bash ~/pacman/port/tools/build-vendor-boot.sh [dtb.img]     (default: hybrid/test-U.img)
+#   bash ~/pacman/port/tools/build-vendor-boot.sh [dtb.img]     (default: hybrid/test-P.img)
 #   OUT=~/pacman/out/other.img bash ...                          (other output name)
 #   ROOT=~/pacman/alpine/rootfs-desktop COMP=xz OUT=... bash ...  (desktop: needs xz to fit)
 #
@@ -17,7 +17,7 @@ set -euo pipefail
 
 TOP="${PACMAN:-$HOME/pacman}"
 PORT="$(cd "$(dirname "$0")/.." && pwd)"
-DTB="$(realpath "${1:-$PORT/hybrid/test-U.img}")"
+DTB="$(realpath "${1:-$PORT/hybrid/test-P.img}")"
 ROOT="${ROOT:-$TOP/alpine/rootfs}"
 WORK="$TOP/work"
 OUT="${OUT:-$TOP/out/pacman-alpine-vendor_boot.img}"

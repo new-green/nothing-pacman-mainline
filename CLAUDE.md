@@ -49,62 +49,58 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 | Missing | clocks, pinctrl (volume down), PMIC core/IRQs, regulators, UFS, touch, battery, Wi-Fi, GPU |
 | PMIC SPT | MT6363 Self-Protection Timer reset the phone after 1.5-26 min; init turns it off at boot (SOLVED, see below) |
 
-**Images** (`out/`):
-- `pacman-desktop-boot.img` + `pacman-desktop-vendor_boot.img` — newest **known-good** (2026-11-09):
-  7.3.3 (9 patches), SPT off at boot, Alpine + slim XFCE (xz ramdisk, 39 MB image), DTB test-P.
-- `pacman-733-boot.img` + `pacman-keys-vendor_boot.img` — newest **known-good** kernel: 7.3.3 stable,
-  all features (display, USB net/serial, thermal, reboot, SPMI keys) + STRICT_DEVMEM off (debug).
-  7.3.3 needed a backport of the 7.4 xsphy fix that clears the U2PHYDTM0 FORCE_* bits LK leaves set
-  (without it the gadget pulls D+ but the host never sees it).
-- `pacman-keys-boot.img` + `pacman-keys-vendor_boot.img` (DTB `test-P`): stage 2 keys. Boots, keys work,
-  but hit the reset bug. `pacman-dbg-boot.img` = same kernel without STRICT_DEVMEM (debug);
-  `pacman-ctrl-vendor_boot.img` = Alpine + `test-U` (SPMI off) for control runs.
-- `pacman-alpine-boot.img` + `pacman-alpine-vendor_boot.img` — newest **known-good** (2026-11-09):
-  boots straight into Alpine 3.24 (Alpine replaces Android's platform ramdisk fragment in
-  vendor_boot, `tools/build-vendor-boot.sh`); login on tty1, USB net/serial, thermal, reboot.
-  The images below pair with `pacman-usb1-vendor_boot.img` (stock vendor_boot + test-U DTB).
-- `pacman-net-boot.img` — newest **known-good**: serial shell, USB network, thermal, reboot, temp dash.
-- `pacman-login-boot.img` — newest: ovl + boot log on fbcon then getty login on tty1 (root, no
-  password), /bin -> /pacman/bin, `alpine` command. Login tested (first build lacked the /bin fix,
-  fixed live, then rebuilt).
-- `pacman-ovl-boot.img` — net + cmdfb hides LK's Orange State layer at probe (tested).
-- `pacman-dashtemp-boot.img` — previous good (g_serial only, no network).
-- Older: `pacman-therm-boot.img`, `pacman-slim-boot.img`, `pacman-usb2-boot.img` (all good), `pacman-usb2b-boot.img` (bootloops, too big).
+**Images** (`out/`; a copy of the current pair + SHA256SUMS is in `archive/checkpoint-2026-11-09-xfce-images/`):
+- **Current known-good pair:** `pacman-desktop-boot.img` + `pacman-desktop-vendor_boot.img`
+  (7.3.3 + 9 patches, DTB test-P, SPT off at boot, Alpine + slim XFCE in an xz ramdisk, 39 MB).
+- Other vendor_boot images: `pacman-alpine-vendor_boot.img` (Alpine without desktop, test-P; default
+  output of build-vendor-boot.sh, rebuilt 2026-11-09 late) and `pacman-keys-vendor_boot.img` (same,
+  older), `pacman-ctrl-vendor_boot.img` (Alpine, test-U: no SPMI -> SPT cannot be turned off ->
+  resets), `pacman-usb1-vendor_boot.img` (stock Android ramdisk, test-U: same limitation).
+- Everything else in `out/` is history from 2026-11-09 (7.4-rc1 builds `pacman-{usb1,usb1b,usb2,slim,
+  therm,dashtemp,net,ovl,login,alpine,keys,dbg}-boot.img`, 7.3.3 steps `pacman-{733,spt}-boot.img`,
+  `pacman-usb2b-boot.img` = too big, bootloops). Images without the SPT fix reset after 1.5-26 min.
 
 ## Workflow
-- Flash (owner approves): `adb reboot bootloader`; `fastboot flash boot_b <img>`;
-  `fastboot flash vendor_boot_b out/pacman-usb1-vendor_boot.img`; `fastboot reboot`.
-- Back to stock: `bash tools/to-stock.sh -n <name>` — reboots mainline into fastboot via
-  `pacman-reboot bootloader` (or Android via adb), checks slot b, flashes stock boot_b/vendor_boot_b,
-  waits for Android, saves pstore console log to `~/pacman/logs/log-<name>-<date>.txt`.
-- Screenshot: `tools/screenshot.py [out.png] [--scale f]` (fb0 over telnet/nc, PC-initiated).
-- Talk to the phone: `tools/pacsh.py [--net] run 'cmd' [-t s]`, `tools/pacsh.py [--net] push LOCAL REMOTE [-x]`
-  (gzip+base64 over ttyACM0, md5-checked, ~16 MB/s into RAM). Close picocom first
-  (`pgrep -a picocom`), two readers split the output. Owner uses `picocom -b 115200 /dev/ttyACM0`.
-- Build: `make -C port/ui` (pacman-dash, pacman-reboot); `tools/build-busybox.sh`,
-  `tools/build-fastfetch.sh` (once); kernel:
+- Flash (owner approves each time): `adb reboot bootloader` (or `pacman-reboot bootloader` on mainline);
+  `fastboot getvar current-slot` = b; `fastboot flash boot_b <boot.img>`;
+  `fastboot flash vendor_boot_b <vendor_boot.img>`; `fastboot reboot`.
+- Back to stock: `bash tools/to-stock.sh [-n name | --no-log]` — gets the phone into fastboot itself
+  (adb, or `pacman-reboot bootloader` over telnet/serial), checks slot b, flashes stock
+  boot_b/vendor_boot_b, optionally saves the pstore log to `~/pacman/logs/log-<name>-<date>.txt`.
+- Talk to the phone: `tools/pacsh.py --net run 'cmd' [-t s]`, `tools/pacsh.py --net push LOCAL REMOTE [-x]`
+  (telnet, own shell per call). Without `--net` it uses the serial shell shared with the owner's
+  picocom (see Pitfalls). Screenshot: `tools/screenshot.py [out.png] [--scale f]`.
+- Build userspace: `make -C port/ui` (pacman-dash, pacman-reboot); once: `tools/build-busybox.sh`,
+  `tools/build-fastfetch.sh`. Kernel:
   `cd linux; export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-;`
   `./scripts/kconfig/merge_config.sh -m .config ../port/pacman.config && make olddefconfig && make -j$(nproc) Image.lz4`;
   `mkbootimg --header_version 4 --kernel arch/arm64/boot/Image.lz4 -o ../out/<name>-boot.img`.
-- vendor_boot (only when the DTB changes): `cd work; cp ../port/hybrid/<dtb>.img vb/dtb;`
-  `eval mkbootimg $(cat vb_args.txt) --vendor_boot ../out/<name>-vendor_boot.img`.
-  DTB sources are decompiled stock DTBs: `linux/scripts/dtc/dtc -I dts -O dtb` (no -@, `__symbols__`
-  already present), then wrap in an Android DT table (see rule 1 below).
-- **Before every flash check the kernel size** (see LK rules). Name new images, don't overwrite known-good ones.
+  The built-in initramfs embeds ui/ + busybox + fastfetch: rebuild the kernel after changing them.
+- Root filesystem + vendor_boot: `[DESKTOP=1] tools/build-alpine.sh [pkgs]`, then
+  `[ROOT=~/pacman/alpine/rootfs-desktop COMP=xz OUT=...] tools/build-vendor-boot.sh hybrid/test-P.img`.
+- DTB: edit `hybrid/<name>.dts`, `tools/build-dtb.sh hybrid/<name>.dts` (dtc + Android DT table);
+  `tools/build-dtb.sh --check` verifies all committed `.img` files.
+- **Before every flash check the kernel size** (LK rule 5). Name new images, don't overwrite known-good ones.
+- Checkpoints: tag `checkpoint-2026-11-09-xfce` in port (pushed) and `pacman-checkpoint-2026-11-09-xfce`
+  in linux; bundles in `archive/checkpoint-2026-11-09-xfce-*.bundle`. The kernel commits exist only
+  locally (+ as kernel-patches/): bundle them again after changing the branch.
 
 ## Layout (~/pacman)
-- `linux/` shallow clone; branch `pacman-7.3` = v7.3.3 (stable, fetched with --depth 1) + our 7 commits:
-  DTS + cmdfb, cmdfb mmap, mtu3 force-vbus, mtk_therm_intf, cmdfb hide LK layers, SPMI MT6886,
-  MT6363 polled keys. Old branch `pacman` = same on 7.4-rc1 (fa4ad798f).
-  `linux/pacman.config` is a stale untracked copy — the real fragment is `port/pacman.config`.
-- `port/` (git, master): `pacman.config`, `kernel-patches/` (git am series on stable `v7.3.3`),
-  `drivers/` (copies of our drivers), `LICENSE` (GPL-2.0),
-  `hybrid/` (DTB sources: test-H = stock + display node, **test-U = test-H + USB peripheral**),
-  `ui/` (pacman-init.sh, initramfs.list, pacman-dash.c, pacman-reboot.c, os-release, udhcpd.conf),
-  `tools/`, `docs/COMMANDS.md`, `README.md`, `arch/` (clean minimal DTS, does not boot yet).
+- `linux/` shallow clone; branch `pacman-7.3` = v7.3.3 (stable) + our 9 commits: DTS + cmdfb, cmdfb
+  mmap, mtu3 force-vbus, mtk_therm_intf, cmdfb hide LK layers, SPMI MT6886, MT6363 polled keys,
+  xsphy force-bit backport, SPT attribute. Old branch `pacman` = first 7 on 7.4-rc1 (fa4ad798f).
+  Untracked there: `pacman.config` (stale copy, the real fragment is `port/pacman.config`),
+  `scripts/gen_init_cpio` (build artifact).
+- `port/` (git, master, pushed to GitHub): `pacman.config`, `kernel-patches/` (git am series on
+  `v7.3.3`), `drivers/` (copies of our three own drivers), `LICENSE`, `README.md`, `docs/COMMANDS.md`,
+  `hybrid/` (DTB sources + wrapped images: test-H = stock + display node, test-U = + USB peripheral,
+  **test-P = + SPMI clocks, current**), `ui/` (initramfs: pacman-init.sh, initramfs.list,
+  pacman-dash.c, pacman-reboot.c, alpine-enter.sh, /etc files), `tools/`, `arch/` (clean minimal
+  DTS, does not boot yet). Local-only, git-excluded: `KOMUTLAR.md`, `README.tr.md`.
 - `stock/` read-only backups. `work/` vendor_boot repack (`vb/`, `vb_args.txt` reproduces stock
-  byte-for-byte). `out/` images. `logs/` pstore logs, `pl_lk.txt` (LK log), `live.dtb`.
-  `busybox/`, `fastfetch/` third-party sources + static binaries. `archive/` old tests.
+  byte-for-byte). `out/` images. `logs/` pstore logs, `pl_lk.txt` (stock LK log), `live.dtb`.
+  `alpine/` (downloads, apk.static, `rootfs/`, `rootfs-desktop/`), `busybox/`, `fastfetch/`
+  third-party sources + static binaries. `screenshots/`. `archive/` old tests, backups, checkpoints.
 - `~/pacman/CLAUDE.md` is a symlink to this file.
 
 ## LK / boot rules (hard-won — do not relearn)
@@ -162,16 +158,19 @@ charger 1, recovery 2, bootloader 3, … `SYSCON_REBOOT_MODE=y` (defconfig). PSC
 **Memory.** Stock DTB defines 1.25 GiB CMA (ssmr 288 MiB, ssheap 960 MiB, + 32 MiB default),
 released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3 GiB.
 
-## Userspace (built-in initramfs, `port/ui/initramfs.list`)
-- `/pacman-init` = `ui/pacman-init.sh` (busybox sh, PID 1): mounts proc/sys/devtmpfs/tmpfs/devpts,
-  `busybox --install -s /pacman/bin`, `/etc` -> `/pacman/etc`, hostname `pacman`, starts
-  pacman-dash, (net image) usb0 172.16.42.1 + udhcpd (gives the PC 172.16.42.2, no router/DNS) +
-  telnetd, then a respawning `setsid -c sh -i` on /dev/ttyGS0. Logs "pacman-init: …" to /dev/kmsg.
-- `/pacman/bin`: busybox 1.37.0 (static, sha256-pinned), fastfetch 2.70.0 (static, commit-pinned,
-  all optional libs off), pacman-dash, pacman-reboot. `/pacman/etc`: os-release, udhcpd.conf.
-- cmdline: `console=ttyGS0,115200 console=tty0` (tty0 last = /dev/console), ramoops params, panic=5.
+## Userspace
+- Built-in initramfs (`ui/initramfs.list`), everything under `/pacman/`: busybox 1.37.0 (static,
+  sha256-pinned), fastfetch 2.70.0 (static, commit-pinned), pacman-dash, pacman-reboot, `alpine`
+  (chroot helper), `/pacman/etc` (passwd, issue, motd, os-release, udhcpd.conf).
+- `/pacman-init` = `ui/pacman-init.sh` (busybox sh, PID 1), in order: mounts proc/sys/devtmpfs/tmpfs;
+  applet links; `/etc` and `/bin` -> `/pacman/...` if dangling; hostname; **SPT off**; if `/` is Alpine:
+  Alpine PATH + /run; background job that at ~12 s quietens the console and starts
+  `/usr/local/bin/pacman-desktop` (XFCE) if present, else getty on tty1; usb0 172.16.42.1 + udhcpd
+  (PC gets 172.16.42.2, no router/DNS) + telnetd; respawning shell on /dev/ttyGS0.
+  Logs "pacman-init: …" to /dev/kmsg.
+- cmdline: `console=ttyGS0,115200 console=tty0` (tty0 last = /dev/console), g_cdc MACs, ramoops, panic=5.
 
-## Stage 2: SPMI + MT6363 keys (2026-11-09, works; see OPEN BUG)
+## SPMI + MT6363 keys (2026-11-09, works)
 - PMIF/SPMI-master register layout of MT6886 (downstream `mt6xxx_regs` + `mt6853_spmi_regs`) == mainline
   `mt8195_regs`/`mt8195_spmi_regs`; AP uses SW interface channel 2 in both (downstream ignores the DT's
   `swinf_ch_start`). Kernel: `mediatek,mt6886-spmi` -> `mt8195_pmif_arb` (spmi_ver 1: no IRQ setup, the
@@ -182,7 +181,7 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 - `drivers/input/keyboard/mt6363-keys-polled.c`: binds the SPMI device "mediatek,mt6363" (usid 4),
   regmap_spmi_ext (16-bit reg, 8-bit val), checks SWCID (0x0b) == 0x63, polls TOPSTATUS (0x1e) every
   20 ms while the input device is open: bit1 power, bit3 "home" = KEY_VOLUMEUP; bit clear = pressed.
-  Read-only. Mainline has no MT6363 MFD/IRQ driver yet (only regulator + auxadc). Volume down is not on
+  Reads only, except the root-only `spt_enable` attribute. Mainline has no MT6363 MFD/IRQ driver yet (only regulator + auxadc). Volume down is not on
   the PMIC (GPIO -> needs pinctrl).
 - Test: Alpine has `evtest`; evtest output piped into /dev/kmsg survives resets via ramoops.
 
@@ -268,14 +267,16 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   non-interactive init script.
 - Non-English locales may use a decimal comma: `printf %f` with dots fails in bash -> use `LC_ALL=C`.
 
-## Roadmap (agreed with owner: "real Linux desktop"; owner chose "native" first: boot without PC)
-1. Done: USB network (verified: DHCP, ping, telnet port, 200 MB at 42 MB/s md5-checked).
-   Orange State found and removed (live); boot `pacman-ovl-boot.img` to confirm the driver version.
-2. Alpine in RAM: tooling built (see Alpine section) -> test on the phone.
-3. Done: Xorg + xf86-video-fbdev (landscape) + slim XFCE, controlled from the PC via x11vnc.
-   The owner does NOT plan to move the phone to Linux permanently: only boot_b/vendor_boot_b, always
-   return to stock.
-4. Later: replace the Android vendor ramdisk with our own (≈60 MiB room), cpufreq-hw, clean
-   minimal DTB (without copied reserved regions), PMIC (MT6363/MT6368 over SPMI) -> keys,
-   regulators, UFS (read-only first), touch, battery. References: postmarketOS
-   linux-postmarketos-mediatek-mt6878, mainline MT8188/MT8195.
+## Roadmap
+The owner wants a usable Linux on the phone but does NOT plan to move it to Linux permanently:
+only boot_b/vendor_boot_b are ever written and the phone always goes back to stock.
+Done (2026-11-09): boot, display, USB serial + network, thermal, reboot-to-fastboot, Alpine as
+root filesystem, SPMI + PMIC keys, SPT fix, slim XFCE over VNC, move to 7.3.3 stable.
+Next ideas, roughly by value:
+1. Use the keys on the phone itself (power key: blank/unblank or a small menu; needs an input
+   driver in Xorg, e.g. xf86-input-libinput) so the desktop is usable without the PC.
+2. pinctrl/GPIO for MT6886 (volume down, touch reset/irq), then SPI + the FocalTech touchscreen.
+3. A real MT6363 core driver (IRQs, regulators, RTC -> correct clock), cpufreq-hw.
+4. Clean minimal DTB (without copied reserved regions); UFS read-only first; battery/charger (MT6375).
+References: postmarketOS linux-postmarketos-mediatek-mt6878, mainline MT8188/MT8195/MT8196, TF-A
+plat/mediatek.
