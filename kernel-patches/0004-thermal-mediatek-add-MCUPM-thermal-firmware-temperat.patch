@@ -1,8 +1,8 @@
 From 590d4eb5316240cca7ab03feaec2de667ae2264c Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 15:57:31 +0300
-Subject: [PATCH 4/9] thermal: mediatek: add MCUPM thermal firmware temperature
- reader
+Subject: [PATCH 04/12] thermal: mediatek: add MCUPM thermal firmware
+ temperature reader
 
 On recent MediaTek phone SoCs such as MT6886 (Dimensity 7200) the LVTS
 sensors are run by firmware on the MCUPM co-processor, which the

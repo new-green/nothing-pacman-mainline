@@ -17,11 +17,12 @@ temperatures and boots straight into a small Alpine Linux userspace, all without
 | USB | Device mode (mtu3 + xsphy, forced VBUS): CDC ACM serial shell + kernel console, CDC ECM network (~42 MB/s) |
 | Userspace | Built-in initramfs: busybox, login prompt on the panel, telnet over USB, fastfetch, `pacman-dash` dashboard |
 | Alpine | Boots straight into Alpine Linux 3.24 aarch64 (it replaces Android's ramdisk in `vendor_boot`); runs from RAM |
-| Keys | Power + volume up from the MT6363 PMIC over SPMI (polled) |
+| Keys | Power + volume up (MT6363 PMIC over SPMI, polled), volume down (SoC keypad); power = blank/unblank the panel, all three reach Xorg |
+| Touch | FocalTech FT3681 over SPI3 (own driver, polled at 60 Hz), multitouch, works in XFCE |
 | Desktop | Slim XFCE on Xorg/fbdev (landscape, 2x scaling), controlled from the PC over VNC |
 | Thermal | CPU0-7 + GPU temperatures from the MCUPM firmware, critical trip at 95 °C (power off) |
 | Reboot | `pacman-reboot bootloader` reboots straight into fastboot |
-| Not yet | Clocks, pinctrl, PMIC (MT6363/MT6368, SPMI), regulators, UFS storage, touchscreen, keys, battery/charging, Wi-Fi, GPU |
+| Not yet | Clocks, pinctrl, PMIC core/IRQs, regulators, UFS storage, cpufreq, battery/charging, Wi-Fi, GPU, on-screen keyboard |
 
 Nothing is stored on the phone: there is no storage driver yet, everything lives in RAM.
 
@@ -31,8 +32,10 @@ Nothing is stored on the phone: there is no storage driver yet, everything lives
   tree into `vendor_boot_b` as an Android DT table. LK applies Nothing's DT overlay from `dtbo_b`
   and fills in reserved memory itself. LK refuses kernels much above ~20 MiB LZ4 / ~44 MiB
   decompressed, hence the MediaTek-only kernel config.
-- **Device tree.** For now we use the stock DTB plus our own changes (`hybrid/test-P.dts`): a
-  display node, USB in peripheral mode and the SPMI controller on the fixed 26 MHz clock. A clean minimal DTS is
+- **Device tree.** For now we use the stock DTB plus our own changes (`hybrid/test-T.dts`): a
+  display node, USB in peripheral mode, the SPMI controller on the fixed 26 MHz clock, the SoC
+  keypad and SPI3 with the touchscreen (the vendor touch node from LK's overlay is redirected to an
+  unused node, see CLAUDE.md). A clean minimal DTS is
   in `arch/` but does not boot yet.
 - **Display.** LK leaves the display pipeline running. `pacman-cmdfb` maps LK's framebuffer and
   kicks a frame to the command-mode panel every 50 ms.
@@ -66,7 +69,7 @@ This repository:
 | `kernel-patches/` | Kernel changes on top of stable `v7.3.3`, apply with `git am` |
 | `pacman.config` | Kernel config fragment (merge on top of arm64 `defconfig`) |
 | `drivers/`, `arch/` | Copies of our drivers and the (not yet booting) clean DTS |
-| `hybrid/` | Device trees: `test-P.dts` (current) = stock DTB + display + USB peripheral + SPMI; `.img` = DT-table-wrapped (`tools/build-dtb.sh`) |
+| `hybrid/` | Device trees: `test-T.dts` (current) = stock DTB + display + USB peripheral + SPMI + keypad + touch; `.img` = DT-table-wrapped (`tools/build-dtb.sh`) |
 | `ui/` | Initramfs: `pacman-init.sh` (PID 1), `pacman-dash.c`, `pacman-reboot.c`, `/etc` files, `initramfs.list` |
 | `tools/` | PC-side tools: flashing back to stock, phone shell, Alpine, screenshots, builds |
 | `docs/COMMANDS.md` | Command reference |

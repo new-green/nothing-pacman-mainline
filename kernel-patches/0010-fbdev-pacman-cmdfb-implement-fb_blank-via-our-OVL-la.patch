@@ -1,0 +1,175 @@
+From e558b3d21a13073053890719be0d3e04751a23cc Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 17:00:12 +0300
+Subject: [PATCH 10/12] fbdev: pacman-cmdfb: implement fb_blank via our OVL
+ layer
+
+Remember the OVL layer that scans out the framebuffer while scanning the
+layers LK left on, and switch that layer off for any blank level and back
+on for FB_BLANK_UNBLANK. The OLED panel then shows the black background,
+so its pixels are really off. Used by pacman-keysd for the power key.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/video/fbdev/pacman-cmdfb.c | 82 ++++++++++++++++++++++--------
+ 1 file changed, 60 insertions(+), 22 deletions(-)
+
+diff --git a/drivers/video/fbdev/pacman-cmdfb.c b/drivers/video/fbdev/pacman-cmdfb.c
+index 711d02581..a6a963a65 100644
+--- a/drivers/video/fbdev/pacman-cmdfb.c
++++ b/drivers/video/fbdev/pacman-cmdfb.c
+@@ -16,7 +16,9 @@
+  *  - dumps the relevant DSI / mutex registers to the kernel log,
+  *  - turns off any OVL layer LK left enabled that does not scan out our
+  *    framebuffer: the unlocked-bootloader ("Orange State") warning sits in
+- *    such a layer (ovl0 L1) on top of everything we draw.
++ *    such a layer (ovl0 L1) on top of everything we draw,
++ *  - implements fb_blank by switching our own OVL layer off and on: with no
++ *    layer the OLED panel shows the black background, i.e. its pixels are off.
+  *
+  * Bring-up hack, not meant for upstream as is.
+  */
+@@ -67,6 +69,10 @@ struct pacman_cmdfb {
+ 	struct fb_info *info;
+ 	struct delayed_work work;
+ 	u32 pseudo_palette[16];
++	/* the OVL layer that scans out our framebuffer, for fb_blank */
++	void __iomem *fb_ovl;
++	unsigned int fb_ovl_reg;
++	u32 fb_ovl_bit;
+ };
+ 
+ static void pacman_cmdfb_kick(struct pacman_cmdfb *p)
+@@ -119,6 +125,24 @@ static int pacman_cmdfb_mmap(struct fb_info *info, struct vm_area_struct *vma)
+ 	return vm_iomap_memory(vma, p->paddr, p->visible);
+ }
+ 
++static int pacman_cmdfb_blank(int blank, struct fb_info *info)
++{
++	struct pacman_cmdfb *p = info->par;
++	u32 val;
++
++	if (!p->fb_ovl)
++		return -EINVAL;
++
++	val = readl(p->fb_ovl + p->fb_ovl_reg);
++	if (blank == FB_BLANK_UNBLANK)
++		val |= p->fb_ovl_bit;
++	else
++		val &= ~p->fb_ovl_bit;
++	writel(val, p->fb_ovl + p->fb_ovl_reg);
++	pacman_cmdfb_kick(p);
++	return 0;
++}
++
+ static const struct fb_ops pacman_cmdfb_ops = {
+ 	.owner		= THIS_MODULE,
+ 	.fb_read	= fb_sys_read,
+@@ -128,6 +152,7 @@ static const struct fb_ops pacman_cmdfb_ops = {
+ 	.fb_imageblit	= sys_imageblit,
+ 	.fb_setcolreg	= pacman_cmdfb_setcolreg,
+ 	.fb_mmap	= pacman_cmdfb_mmap,
++	.fb_blank	= pacman_cmdfb_blank,
+ };
+ 
+ static void pacman_cmdfb_dump(struct pacman_cmdfb *p)
+@@ -154,53 +179,67 @@ static void pacman_cmdfb_dump(struct pacman_cmdfb *p)
+ }
+ 
+ /*
+- * Clear the enable bit of every layer whose buffer is not our framebuffer.
+- * Each 'enable' bit n pairs with the layer address register addr(n).
++ * Look at the enabled layers of one enable register (bit n pairs with the
++ * layer address register addr(n)): remember the one that shows our
++ * framebuffer and, if asked to, clear the enable bit of all others.
+  */
+-static u32 pacman_cmdfb_hide_layers(struct pacman_cmdfb *p, struct device_node *np,
+-				    void __iomem *ovl, u32 enable, int count,
++static u32 pacman_cmdfb_scan_layers(struct pacman_cmdfb *p, struct device_node *np,
++				    void __iomem *ovl, unsigned int reg, int count,
+ 				    unsigned int (*addr)(int), const char *kind)
+ {
+ 	u32 fb = lower_32_bits(p->paddr);
++	u32 enable = readl(ovl + reg);
++	u32 new = enable;
+ 	int n;
+ 
+ 	for (n = 0; n < count; n++) {
+ 		u32 a = readl(ovl + addr(n));
+ 
+-		if (!(enable & BIT(n)) || a == fb)
++		if (!(enable & BIT(n)))
+ 			continue;
+-		enable &= ~BIT(n);
++		if (a == fb) {
++			if (!p->fb_ovl) {
++				p->fb_ovl = ovl;
++				p->fb_ovl_reg = reg;
++				p->fb_ovl_bit = BIT(n);
++				dev_info(p->dev, "%pOF: framebuffer is layer %s%d\n", np, kind, n);
++			}
++			continue;
++		}
++		if (!hide_lk_layers)
++			continue;
++		new &= ~BIT(n);
+ 		dev_info(p->dev, "%pOF: hiding LK layer %s%d (buffer %08x)\n", np, kind, n, a);
+ 	}
+-	return enable;
++	if (new != enable)
++		writel(new, ovl + reg);
++	return new;
+ }
+ 
+ static unsigned int ovl_l_addr(int n)  { return OVL_L_ADDR(n); }
+ static unsigned int ovl_el_addr(int n) { return OVL_EL_ADDR(n); }
+ 
+-static void pacman_cmdfb_hide_lk_layers(struct pacman_cmdfb *p)
++static void pacman_cmdfb_scan_ovls(struct pacman_cmdfb *p)
+ {
+ 	struct device_node *np;
+ 
+ 	for_each_compatible_node(np, NULL, "mediatek,mt6886-disp-ovl") {
+ 		void __iomem *ovl = of_iomap(np, 0);
+-		u32 con, ext, new;
+ 
+ 		if (!ovl)
+ 			continue;
+ 
+-		con = readl(ovl + OVL_SRC_CON);
+-		new = pacman_cmdfb_hide_layers(p, np, ovl, con, OVL_NUM_LAYERS, ovl_l_addr, "L");
+-		if (new != con)
+-			writel(new, ovl + OVL_SRC_CON);
+-
+-		ext = readl(ovl + OVL_DATAPATH_EXT_CON);
+-		new = pacman_cmdfb_hide_layers(p, np, ovl, ext, OVL_NUM_EXT_LAYERS, ovl_el_addr, "EL");
+-		if (new != ext)
+-			writel(new, ovl + OVL_DATAPATH_EXT_CON);
++		pacman_cmdfb_scan_layers(p, np, ovl, OVL_SRC_CON, OVL_NUM_LAYERS,
++					 ovl_l_addr, "L");
++		pacman_cmdfb_scan_layers(p, np, ovl, OVL_DATAPATH_EXT_CON,
++					 OVL_NUM_EXT_LAYERS, ovl_el_addr, "EL");
+ 
+-		iounmap(ovl);
++		/* keep the mapping of the block that holds our layer (fb_blank) */
++		if (p->fb_ovl != ovl)
++			iounmap(ovl);
+ 	}
++	if (!p->fb_ovl)
++		dev_warn(p->dev, "no OVL layer shows the framebuffer: blanking unavailable\n");
+ }
+ 
+ static int pacman_cmdfb_probe(struct platform_device *pdev)
+@@ -251,8 +290,7 @@ static int pacman_cmdfb_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	pacman_cmdfb_dump(p);
+-	if (hide_lk_layers)
+-		pacman_cmdfb_hide_lk_layers(p);
++	pacman_cmdfb_scan_ovls(p);
+ 
+ 	strscpy(info->fix.id, "pacman-cmdfb", sizeof(info->fix.id));
+ 	info->fix.type = FB_TYPE_PACKED_PIXELS;
+-- 
+2.56.0
+

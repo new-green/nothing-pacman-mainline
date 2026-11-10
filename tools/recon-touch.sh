@@ -23,6 +23,10 @@ pin 93 SPI3_B_CLK; pin 94 SPI3_B_CSB; pin 95 SPI3_B_MO
 echo "== pericfg_ao gates (bit set = clock gated OFF)"
 s=$(rd 0x11036010); echo "PERAO0_STA=$s  spi3(bit15)=$(( (0x$s >> 15) & 1 ))"
 echo "PERAO1_STA=$(rd 0x11036014) PERAO2_STA=$(rd 0x11036018)"
+echo "== SPI source clock: topckgen CLK_CFG_5 (0x10000060) bits 24-26 = spi_sel, bit 31 = mux off"
+c=$(rd 0x10000060); m=$(( (0x$c >> 24) & 7 ))
+set -- 26 208 182 156 136.5 124.8 104 78
+shift $m; echo "CLK_CFG_5=$c spi_sel=$m (~$1 MHz) off=$(( (0x$c >> 31) & 1 ))"
 echo "== SPI3 controller @0x11013000 (only meaningful if its clock runs)"
 if [ $(( (0x$s >> 15) & 1 )) = 0 ]; then
 	for o in 0x00 0x04 0x18 0x1c 0x28; do printf "  +%s=%s" $o $(rd $((0x11013000 + o))); done; echo

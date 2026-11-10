@@ -12,8 +12,8 @@ layout from the [README](../README.md). Flash commands only ever write **`boot_b
 # stock Android -> mainline
 adb reboot bootloader
 fastboot getvar current-slot                 # must be "b"
-fastboot flash boot_b        ~/pacman/out/pacman-boot.img
-fastboot flash vendor_boot_b ~/pacman/out/pacman-alpine-vendor_boot.img
+fastboot flash boot_b        ~/pacman/out/pacman-touch1-boot.img
+fastboot flash vendor_boot_b ~/pacman/out/pacman-touch1-vendor_boot.img
 fastboot reboot
 
 # ... try things on the phone (sections 2-4) ...
@@ -95,6 +95,15 @@ Reads the phone's framebuffer (`/dev/fb0`) over the USB network.
 
 ## 4. On the phone
 
+### Keys and touchscreen
+Power (short press) blanks/unblanks the panel (`pacman-keysd`); any key wakes it. Power, volume up
+and volume down also reach Xorg as keys. The touchscreen driver is still a module: load it after
+each boot (it checks the SPI3 clock gate first, read-only):
+```sh
+bash ~/pacman/port/tools/touch-bringup.sh --x          # load + restart X so it uses the touchscreen
+bash ~/pacman/port/tools/touch-bringup.sh --evtest 10   # load + show touch events for 10 s
+```
+
 ### Login prompt on the panel
 The kernel log scrolls on the panel, at ~12 s a `pacman login:` prompt appears (user **root**,
 no password). The phone has no keyboard or touch driver yet, so type from the PC:
@@ -130,7 +139,7 @@ Critical temperature is **95 °C**: above it the kernel powers the phone off.
 # PC: build the desktop root filesystem and its vendor_boot image (xz ramdisk)
 DESKTOP=1 bash ~/pacman/port/tools/build-alpine.sh
 ROOT=~/pacman/alpine/rootfs-desktop COMP=xz OUT=~/pacman/out/pacman-desktop-vendor_boot.img \
-  bash ~/pacman/port/tools/build-vendor-boot.sh ~/pacman/port/hybrid/test-P.img
+  bash ~/pacman/port/tools/build-vendor-boot.sh ~/pacman/port/hybrid/test-T.img
 ```
 With that image the boot log scrolls, then XFCE starts on the panel (landscape). Control it from
 the PC with any VNC viewer: `gvncviewer 172.16.42.1:0` (no password, USB link only). If the desktop
@@ -189,12 +198,12 @@ cd ~/pacman/linux && export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 make -j$(nproc) Image.lz4
 mkbootimg --header_version 4 --kernel arch/arm64/boot/Image.lz4 -o ../out/pacman-NEW-boot.img
 
-# device tree: compile + wrap for LK (current: hybrid/test-P.dts); --check verifies all images
-bash ~/pacman/port/tools/build-dtb.sh ~/pacman/port/hybrid/test-P.dts
+# device tree: compile + wrap for LK (current: hybrid/test-T.dts); --check verifies all images
+bash ~/pacman/port/tools/build-dtb.sh ~/pacman/port/hybrid/test-T.dts
 bash ~/pacman/port/tools/build-dtb.sh --check
 
 # vendor_boot with Alpine as ramdisk (see section 4) and that device tree
-bash ~/pacman/port/tools/build-vendor-boot.sh ~/pacman/port/hybrid/test-P.img
+bash ~/pacman/port/tools/build-vendor-boot.sh ~/pacman/port/hybrid/test-T.img
 ```
 
 ### Check the size before flashing

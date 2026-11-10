@@ -55,6 +55,14 @@ class Phone:
         return buf
 
     def run(self, cmd, timeout=10):
+        cmd = cmd.strip()
+        if "\n" in cmd:
+            # Multi-line scripts: the interactive shell would echo every line (with its
+            # prompt) into the output and its line editor truncates long lines. Send the
+            # script as a file and run it with one short line instead.
+            tmp = "/tmp/.pacsh-run-%d.sh" % os.getpid()
+            self.push_bytes((cmd + "\n").encode(), tmp)
+            cmd = "sh %s; rm -f %s" % (tmp, tmp)
         # markers are split with "" so the shell's echo of the line never matches
         self.write(('echo __B""EG__; %s; echo __E""ND__\n' % cmd).encode())
         buf = self.wait_for(b"__END__", timeout)
@@ -62,7 +70,9 @@ class Phone:
         return text.split("__BEG__\n", 1)[-1].split("__END__", 1)[0]
 
     def push(self, local, remote, executable=False):
-        raw = open(local, "rb").read()
+        return self.push_bytes(open(local, "rb").read(), remote, executable)
+
+    def push_bytes(self, raw, remote, executable=False):
         payload = base64.encodebytes(gzip.compress(raw, 9))   # 76-char lines
         tmp = remote + ".part"
         self.run("stty -echo")

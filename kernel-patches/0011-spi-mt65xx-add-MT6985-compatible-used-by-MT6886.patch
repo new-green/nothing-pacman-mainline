@@ -1,0 +1,48 @@
+From 00edef3506869944298c7fd14fb36bbb055f6c62 Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 17:00:12 +0300
+Subject: [PATCH 11/12] spi: mt65xx: add MT6985 compatible (used by MT6886)
+
+The SPI controllers of MT6886 are described as mediatek,mt6985-spi. The
+vendor kernel data is like MT6991 (pad select, enhanced timing, extended
+DMA addresses, IPM design) without the must_tx quirk. The vendor driver
+drives CS by software on this IP; the mainline hardware CS plus pause
+handling works for the FT3681 touchscreen (single-transfer messages).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/spi/spi-mt65xx.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/drivers/spi/spi-mt65xx.c b/drivers/spi/spi-mt65xx.c
+index b845a599f..84a0f2c58 100644
+--- a/drivers/spi/spi-mt65xx.c
++++ b/drivers/spi/spi-mt65xx.c
+@@ -220,6 +220,14 @@ static const struct mtk_spi_compatible mt6893_compat = {
+ 	.no_need_unprepare = true,
+ };
+ 
++/* MT6985 and MT6886: like MT6991 but without the must_tx quirk (vendor kernel data) */
++static const struct mtk_spi_compatible mt6985_compat = {
++	.need_pad_sel = true,
++	.enhance_timing = true,
++	.dma_ext = true,
++	.ipm_design = true,
++};
++
+ static const struct mtk_spi_compatible mt6991_compat = {
+ 	.need_pad_sel = true,
+ 	.must_tx = true,
+@@ -253,6 +261,9 @@ static const struct of_device_id mtk_spi_of_match[] = {
+ 	{ .compatible = "mediatek,mt6765-spi",
+ 		.data = (void *)&mt6765_compat,
+ 	},
++	{ .compatible = "mediatek,mt6985-spi",
++		.data = (void *)&mt6985_compat,
++	},
+ 	{ .compatible = "mediatek,mt6991-spi",
+ 		.data = (void *)&mt6991_compat,
+ 	},
+-- 
+2.56.0
+

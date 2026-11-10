@@ -1,7 +1,7 @@
 From 79dd2b4987a12f2d2859dda33b77f30b4dbded59 Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 22:53:23 +0300
-Subject: [PATCH 9/9] Input: mt6363-keys-polled: expose the PMIC
+Subject: [PATCH 09/12] Input: mt6363-keys-polled: expose the PMIC
  self-protection timer
 
 TF-A enables the MT6363 Self-Protection Timer (RG_SELFWDT_EN, 0xa14

@@ -44,6 +44,9 @@ else
 	echo "pacman-init: no $SPT (SPMI/PMIC driver missing): expect PMIC resets" > /dev/kmsg
 fi
 
+# Hardware keys: power = blank/unblank the panel (see ui/pacman-keysd.c).
+/pacman/bin/pacman-keysd < /dev/null > /dev/null 2>&1 &
+
 # Alpine as the root filesystem (tools/build-vendor-boot.sh puts it into vendor_boot's
 # ramdisk, which the kernel unpacks on top of us): prefer its programs, keep ours
 # reachable, give it /run. Logins then land in Alpine.

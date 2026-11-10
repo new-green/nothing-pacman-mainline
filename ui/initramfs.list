@@ -15,6 +15,7 @@ dir /pacman/bin 0755 0 0
 file /pacman/bin/busybox ../busybox/busybox 0755 0 0
 file /pacman/bin/pacman-dash ../port/ui/pacman-dash 0755 0 0
 file /pacman/bin/pacman-reboot ../port/ui/pacman-reboot 0755 0 0
+file /pacman/bin/pacman-keysd ../port/ui/pacman-keysd 0755 0 0
 file /pacman/bin/alpine ../port/ui/alpine-enter.sh 0755 0 0
 # Needs the slim kernel (pacman.config): with the full defconfig this pushed the Image over
 # LK's limit (see CLAUDE.md).

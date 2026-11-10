@@ -10,6 +10,7 @@
 #   linux-<branch>.bundle  our kernel commits on top of the base tag (they exist nowhere else)
 #   *.img                  image pair (default: out/pacman-desktop-{boot,vendor_boot}.img)
 #   kernel.config          full .config of the kernel tree
+#   modules/               our loadable modules as built with the images (touch, SPI, cpufreq-hw)
 #   versions.txt           toolchain, kernel, userspace versions, DTB, image sizes
 #   alpine-packages*.txt   installed packages of the Alpine root filesystems
 #   phone-dmesg.txt, phone-screen.png   only if the phone runs mainline and answers on USB
@@ -79,6 +80,13 @@ do_new() {
 	git -C "$TOP/linux" bundle create "$dir/linux-$kbranch.bundle" "$BASE..$kbranch" "pacman-$tag" 2>/dev/null
 	cp -p "$boot" "$vboot" "$dir/"
 	[[ -f "$TOP/linux/.config" ]] && cp -p "$TOP/linux/.config" "$dir/kernel.config"
+	local m
+	for m in lib/crc/crc-ccitt.ko drivers/spi/spi-mt65xx.ko \
+		 drivers/input/touchscreen/focaltech-fts-spi.ko drivers/cpufreq/mediatek-cpufreq-hw.ko; do
+		[[ -f "$TOP/linux/$m" ]] || continue
+		mkdir -p "$dir/modules"
+		cp -p "$TOP/linux/$m" "$dir/modules/"
+	done
 
 	{
 		echo "date:        $(date -Is)"
@@ -126,6 +134,7 @@ port.bundle             port repo: master + tag $tag ($(git -C "$TOP/port" rev-p
 linux-$kbranch.bundle   kernel commits $BASE..$kbranch + tag pacman-$tag ($(git -C "$TOP/linux" rev-parse --short HEAD))
 $(basename "$boot"), $(basename "$vboot")   image pair (boot_b / vendor_boot_b)
 kernel.config, versions.txt, alpine-packages*.txt   what the images were built from
+modules/                .ko files built with the kernel (load with tools/touch-bringup.sh, MODDIR=)
 phone evidence:         $phone
 SHA256SUMS              sha256 of every file here; verify: checkpoint.sh --verify $stamp
 

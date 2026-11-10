@@ -36,7 +36,7 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 - Downstream source (vendor 5.15): github.com/NothingOSS/android_kernel_5.15_nothing_mt6886
   (branch `mt6886/Pacman/t`) + android_kernel_modules_nothing_mt6886. `gh` is logged in.
 
-## What works (2026-11-09)
+## What works (2026-11-10)
 | Area | State |
 |---|---|
 | Kernel | stable 7.3.3 + our patches (branch `pacman-7.3`; old 7.4-rc1 branch `pacman` kept), slim config (MediaTek only), 8 CPUs, GICv3, timer, PSCI, mtk-wdt, ramoops |
@@ -46,14 +46,19 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 | Thermal | `mtk_therm_intf`: cpu0..7 + gpu zones from MCUPM firmware SRAM, critical 95 °C |
 | Reboot | `pacman-reboot bootloader` -> LK fastboot (no key combo needed) |
 | SPMI/PMIC | mainline `spmi-mtk-pmif` with MT8195 data reads the MT6363 (chip id 0x63) |
-| Keys | power + volume up via MT6363 TOPSTATUS, polled (`mt6363-keys-polled`), `/dev/input/event0` |
+| Keys | power + volume up via MT6363 TOPSTATUS, polled (`mt6363-keys-polled`); volume down = SoC keypad (mainline `mt6779-keypad`, DTB test-K+); `pacman-keysd`: power short press = blank/unblank (cmdfb fb_blank = OVL layer off); all keys in Xorg via evdev |
+| Touch | FT3681 on SPI3, own `focaltech-fts-spi` (polled 60 Hz), spi-mt65xx MT6985 compat, DTB test-T; modules loaded by `tools/touch-bringup.sh` (`MODDIR=<checkpoint>/modules` for an older image); works in evtest + XFCE (2026-11-10) |
 | UI | boot log on fbcon, then slim XFCE on Xorg/fbdev (landscape, 2x), controlled over VNC (172.16.42.1:5900); login prompt on tty1 as fallback |
-| Missing | clocks, pinctrl (volume down), PMIC core/IRQs, regulators, UFS, touch, battery, Wi-Fi, GPU |
+| Missing | clocks, pinctrl/EINT (touch irq), PMIC core/IRQs, regulators, UFS, cpufreq (module exists, not loaded), battery, Wi-Fi, GPU |
 | PMIC SPT | MT6363 Self-Protection Timer reset the phone after 1.5-26 min; init turns it off at boot (SOLVED, see below) |
 
 **Images** (`out/`; a copy of the pair is in the latest `checkpoint/` folder):
-- **Current known-good pair:** `pacman-desktop-boot.img` + `pacman-desktop-vendor_boot.img`
-  (7.3.3 + 9 patches, DTB test-P, SPT off at boot, Alpine + slim XFCE in an xz ramdisk, 39 MB).
+- **Current known-good pair:** `pacman-touch1-boot.img` + `pacman-touch1-vendor_boot.img` (7.3.3 + 12
+  patches built as `-dirty` just before they were committed, DTB test-T, keys + blank, SPI/touch/
+  cpufreq-hw as modules: the matching .ko files are in `modules/` of the first checkpoint taken after
+  the commit (`checkpoint.sh --list`); modules rebuilt from the committed tree have another vermagic
+  -> rebuild the image pair too).
+- Previous pairs: `pacman-keys3-*` (keys, DTB test-K), `pacman-desktop-*` (7.3.3 + 9 patches, test-P).
 - Also in `out/`: `pacman-alpine-vendor_boot.img` (Alpine without desktop, test-P; default output of
   build-vendor-boot.sh) and `pacman-usb1-vendor_boot.img` (stock Android ramdisk + test-U DTB: no
   SPMI -> the SPT cannot be turned off -> resets after minutes). Both pair with the desktop boot image.
@@ -90,14 +95,14 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
   First one: `checkpoint/2026-11-09-2356/` (tag `checkpoint-2026-11-09-xfce`, pushed).
 
 ## Layout (~/pacman)
-- `linux/` shallow clone; branch `pacman-7.3` = v7.3.3 (stable) + our 9 commits: DTS + cmdfb, cmdfb
+- `linux/` shallow clone; branch `pacman-7.3` = v7.3.3 (stable) + our 12 commits: DTS + cmdfb, cmdfb
   mmap, mtu3 force-vbus, mtk_therm_intf, cmdfb hide LK layers, SPMI MT6886, MT6363 polled keys,
-  xsphy force-bit backport, SPT attribute. Old branch `pacman` = first 7 on 7.4-rc1 (fa4ad798f).
+  xsphy force-bit backport, SPT attribute, cmdfb fb_blank, spi-mt65xx MT6985, FT3681 touch driver. Old branch `pacman` = first 7 on 7.4-rc1 (fa4ad798f).
   Untracked there: `scripts/gen_init_cpio` (build artifact). The config fragment is `port/pacman.config`.
 - `port/` (git, master, pushed to GitHub): `pacman.config`, `kernel-patches/` (git am series on
   `v7.3.3`), `drivers/` (copies of our three own drivers), `LICENSE`, `README.md`, `docs/COMMANDS.md`,
   `hybrid/` (DTB sources + wrapped images: test-H = stock + display node, test-U = + USB peripheral,
-  **test-P = + SPMI clocks, current**), `ui/` (initramfs: pacman-init.sh, initramfs.list,
+  test-P = + SPMI clocks, test-K = + SoC keypad, **test-T = + SPI3/touch, current**), `ui/` (initramfs: pacman-init.sh, initramfs.list,
   pacman-dash.c, pacman-reboot.c, alpine-enter.sh, /etc files), `tools/`, `arch/` (clean minimal
   DTS, does not boot yet). Local-only, git-excluded: `KOMUTLAR.md`, `README.tr.md`.
 - `stock/` read-only backups. `work/` vendor_boot repack (`vb/`, `vb_args.txt` reproduces stock
@@ -152,8 +157,10 @@ g_serial = 0525:a4a7; g_cdc = 0525:a4aa (fixed MACs via `g_cdc.dev_addr/host_add
 0x114000 (DT `therm-intf@114000`, "mediatek,therm_intf"): CPU n at +4n, GPU +0x180, CPU headroom
 +0x20, limit/cur freq kHz +0x200/+0x210 (little, big), max temp +0x220. Unused slots = 0x27bc86aa.
 Layout: downstream drivers/thermal/mediatek/thermal_interface.h. +0x330 = firmware reboot
-temperature (writable — don't). Idle 35-38 °C. `mediatek,cpufreq-hw` node also exists
-(perf domains @0x11bc10/0x11bd30) -> candidate for mainline `ARM_MEDIATEK_CPUFREQ_HW`.
+temperature (writable — don't). Idle 35-38 °C. `mediatek,cpufreq-hw` node (perf domains @0x11bc10/0x11bd30)
+matches mainline `mediatek-cpufreq-hw` exactly; it is built as a module (=m) but no module was ever
+loaded -> no cpufreq, CPUs stay at LK's ~1.25/1.0 GHz (see ~/pacman/PERFORMANS_TESTLERI.md: A715
+only 1.58x A510). Loading it writes REG_FREQ_ENABLE/PERF_STATE (DVFS firmware): ask the owner first.
 
 **Reboot mode.** `watchdog@1c007000/reboot-mode` (syscon-reboot-mode, TOPRGU +0x24, mask 0xf):
 charger 1, recovery 2, bootloader 3, … `SYSCON_REBOOT_MODE=y` (defconfig). PSCI does the reset
@@ -231,7 +238,33 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 - PC: `gvncviewer 172.16.42.1:0`. Idle: ~520 MB RAM, load 0.4, 41 °C. Only hicolor icons; clock
   shows 1970 (no RTC driver).
 
-## Touchscreen (in progress, plan approved 2026-11-10; stage 0 = recon not yet run on the phone)
+## Touchscreen (WORKS 2026-11-10: chip id 0x5662, fw 142, 6 MHz; evtest + XFCE)
+- Found live: LK leaves SPI3 clock gate open, spi_sel = 208 MHz, pins 141-144 in mode 2, chip powered
+  -> no MMIO/PMIC write was needed. Next: load the modules at boot (built in / init), EINT irq.
+- Ready to test: `out/pacman-touch1-boot.img` + `out/pacman-touch1-vendor_boot.img` (keys image + DTB
+  test-T, SPI/touch as modules), then `tools/touch-bringup.sh [--evtest 10] [--x]`: checks vermagic,
+  reads the SPI3 gate/mux/pin modes (stops if gated), pushes + insmods crc-ccitt, spi-mt65xx,
+  focaltech-fts-spi (`spi_hz` set for ~6 MHz SCK), shows dmesg/evtest, restarts X.
+- Vendor touch node comes from the dtbo overlay (`&spi3`, source: vendor
+  arch/arm64/boot/dts/mediatek/cust_mt6886_touch_ft3681_1084x2412.dtsi): irq from `pio`, supply
+  `mt6368_vtp` -> neither has a driver, and fw_devlink would also hold the SPI3 controller. test-T
+  points `__symbols__/spi3` at `/pacman-dtbo-sink/spi3` (no compatible -> never populated) and puts
+  our own `touchscreen@0` ("focaltech,ft3681", polled, no reset/irq/supply) under the real
+  spi3@11013000. Verified offline with fdtoverlay (same libfdt mechanism as LK).
+- SPI clocks in test-T: parent = fixed-clock 208 MHz (fastest spi_sel parent; divider upper bound),
+  sel = fixed-factor child of parent (mainline probe does clk_set_parent(sel, parent): with three
+  identical clocks it fails). spi_sel mux = topckgen 0x10000060 bits 24-26 (26/208/182/156/136.5/
+  124.8/104/78 MHz), bit 31 off.
+- Vendor SPI uses "sw_cs" (CS via SPI_CMD bit 18/7) on MT6985; mainline uses HW CS + pause. Single
+  transfer per message, so expected to work; first suspect if the chip id reads as 00/ff.
+- Driver `focaltech-fts-spi.c`: framing addr, 0xa0 (read+CRC), len16, 3 dummy, data, CRC-16 (kernel
+  crc_ccitt, init 0xffff, LE); status = byte 3, bits 0xa0 must be clear. Report = 84 bytes from reg
+  0x01: byte 1 = type<<4 | count; type 0: 6-byte records @2 (walk all 10 until id 0xf, count = fingers
+  still down), type 2: 8-byte records @4, coords /16. Params: spi_hz, debug.
+- Xorg: pacman-desktop adds the touchscreen (evdev) with TransformationMatrix "0 1 0 -1 0 1 0 0 1"
+  (X is Rotate CW = RandR right); override via /tmp/pacman-touch-matrix + restart X.
+- `pacsh.py run`: multi-line commands are pushed to /tmp and run with `sh` (the interactive ash
+  echoed every line with its prompt into the output and truncates lines > ~1 KB).
 - Hardware (live DTB): FocalTech **FT3681** (vendor config FTS_CHIP_TYPE _FT3681 = 0x3681008A), SPI device
   on `spi3@11013000` ("mediatek,mt6985-spi", CS0, 6 MHz), reset GPIO 5, irq GPIO 96 (EINT, falling),
   `vdd-supply` = MT6368 `VTP`. SPI3 pins: group A = GPIO 141-144 mode 2 (CLK, CSB, MO, MI); group B would

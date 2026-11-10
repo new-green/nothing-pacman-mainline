@@ -1,0 +1,361 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * FocalTech FT3681 touchscreen controller on SPI ("SPI protocol v2").
+ *
+ * Written from the framing used by FocalTech's vendor driver (Nothing Phone (2a)):
+ *
+ *   write: addr, 0x00, len_hi, len_lo, [3 dummy bytes, data...]
+ *   read:  addr, 0xa0, len_hi, len_lo, 3 dummy bytes, then len data bytes and a
+ *          little-endian CRC-16 (poly 0x8408 reflected, init 0xffff) of the data;
+ *          byte 3 of the answer is a status that must have bits 7 and 5 clear.
+ *
+ * The touch report is read from register 0x01 on every interrupt: byte 1 holds
+ * the report type (high nibble) and the number of fingers (low nibble), the
+ * finger records follow. Type 0x0 uses 6-byte records at offset 2 (12-bit
+ * coordinates), type 0x2 uses 8-byte records at offset 4 (16-bit coordinates,
+ * 16 times finer). Gestures, proximity, fingerprint-on-display, the stylus,
+ * firmware upgrade and ESD handling of the vendor driver are not implemented.
+ *
+ * Without an interrupt in the device tree the report is polled at 60 Hz while
+ * the input device is open, which allows bringing the chip up before pinctrl
+ * and interrupt support exist for the SoC.
+ *
+ * Bring-up parameters: spi_hz overrides spi-max-frequency (the controller derives
+ * its divider from the source clock rate in the device tree, which without a
+ * clock driver is only an upper bound), debug=1 logs every raw touch report.
+ */
+
+#include <linux/crc-ccitt.h>
+#include <linux/delay.h>
+#include <linux/gpio/consumer.h>
+#include <linux/input.h>
+#include <linux/input/mt.h>
+#include <linux/input/touchscreen.h>
+#include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/module.h>
+#include <linux/mod_devicetable.h>
+#include <linux/regulator/consumer.h>
+#include <linux/slab.h>
+#include <linux/spi/spi.h>
+#include <linux/unaligned.h>
+
+#define FTS_REG_TOUCH		0x01
+#define FTS_REG_CHIP_ID	0xa3
+#define FTS_REG_CHIP_ID2	0x9f
+#define FTS_REG_FW_VER		0xa6
+
+#define FTS_CMD_WRITE		0x00
+#define FTS_CMD_READ_CRC	0xa0	/* read (0x80) with CRC (0x20) */
+#define FTS_HDR_LEN		4
+#define FTS_DUMMY_LEN		3
+#define FTS_CRC_LEN		2
+#define FTS_STATUS_ERR		0xa0
+#define FTS_RETRIES		3
+#define FTS_CS_DELAY_US	150
+#define FTS_BUF_LEN		256
+
+#define FTS_MAX_POINTS		10
+#define FTS_TOUCH_LEN		(FTS_MAX_POINTS * 8 + 4)	/* the larger (v2) layout */
+
+#define FTS_TYPE_DEFAULT	0x0
+#define FTS_TYPE_V2		0x2
+
+#define FTS_EV_DOWN		0
+#define FTS_EV_UP		1
+#define FTS_EV_CONTACT		2
+
+#define FTS_DEFAULT_X		1084
+#define FTS_DEFAULT_Y		2412
+#define FTS_POLL_MS		16
+
+static unsigned int spi_hz;
+module_param(spi_hz, uint, 0444);
+MODULE_PARM_DESC(spi_hz, "SPI clock in Hz, overrides spi-max-frequency (0: device tree)");
+
+static bool debug;
+module_param(debug, bool, 0644);
+MODULE_PARM_DESC(debug, "Log every raw touch report");
+
+struct fts_ts {
+	struct spi_device *spi;
+	struct input_dev *input;
+	struct touchscreen_properties prop;
+	struct gpio_desc *reset;
+	u8 *tx;
+	u8 *rx;
+	u8 report[FTS_TOUCH_LEN];
+	u32 active;		/* bitmask of slots that were down in the last report */
+	u8 last_rx[16];		/* start of the last raw answer, for diagnostics */
+};
+
+static int fts_xfer(struct fts_ts *ts, u32 len)
+{
+	struct spi_transfer xfer = {
+		.tx_buf = ts->tx,
+		.rx_buf = ts->rx,
+		.len = len,
+	};
+
+	return spi_sync_transfer(ts->spi, &xfer, 1);
+}
+
+/* Read @len bytes of register @reg; the transfer is retried on a bad status or CRC. */
+static int fts_read(struct fts_ts *ts, u8 reg, u8 *data, u16 len)
+{
+	u32 total = FTS_HDR_LEN + FTS_DUMMY_LEN + len + FTS_CRC_LEN;
+	const u8 *payload = ts->rx + FTS_HDR_LEN + FTS_DUMMY_LEN;
+	int i, ret = -EIO;
+
+	if (total > FTS_BUF_LEN)
+		return -EINVAL;
+
+	for (i = 0; i < FTS_RETRIES; i++) {
+		memset(ts->tx, 0, total);
+		ts->tx[0] = reg;
+		ts->tx[1] = FTS_CMD_READ_CRC;
+		put_unaligned_be16(len, &ts->tx[2]);
+
+		ret = fts_xfer(ts, total);
+		memcpy(ts->last_rx, ts->rx, min_t(u32, total, sizeof(ts->last_rx)));
+		if (!ret && !(ts->rx[3] & FTS_STATUS_ERR)) {
+			if (crc_ccitt(0xffff, payload, len) ==
+			    get_unaligned_le16(payload + len)) {
+				memcpy(data, payload, len);
+				ret = 0;
+				usleep_range(FTS_CS_DELAY_US, FTS_CS_DELAY_US + 50);
+				break;
+			}
+			ret = -EBADMSG;
+		} else if (!ret) {
+			ret = -EIO;
+		}
+		usleep_range(FTS_CS_DELAY_US, FTS_CS_DELAY_US + 50);
+	}
+	return ret;
+}
+
+static int fts_read_reg(struct fts_ts *ts, u8 reg, u8 *val)
+{
+	return fts_read(ts, reg, val, 1);
+}
+
+static void fts_report_slot(struct fts_ts *ts, int id, u16 x, u16 y, u8 major, u8 minor)
+{
+	input_mt_slot(ts->input, id);
+	input_mt_report_slot_state(ts->input, MT_TOOL_FINGER, true);
+	touchscreen_report_pos(ts->input, &ts->prop, x, y, true);
+	input_report_abs(ts->input, ABS_MT_TOUCH_MAJOR, major);
+	input_report_abs(ts->input, ABS_MT_TOUCH_MINOR, minor);
+}
+
+static void fts_handle_report(struct fts_ts *ts)
+{
+	const u8 *b = ts->report;
+	u8 type = b[1] >> 4;
+	u8 count = b[1] & 0x0f;
+	u32 down = 0;
+	int i;
+
+	if (debug)
+		dev_info(&ts->spi->dev, "report %*ph\n", 32, b);
+
+	/* all 0xff: the firmware is (re)starting */
+	if (b[1] == 0xff && b[2] == 0xff && b[3] == 0xff && b[4] == 0xff)
+		return;
+
+	if (type == FTS_TYPE_DEFAULT) {
+		/*
+		 * count is the number of fingers still down; the records also carry
+		 * the ones just lifted, so walk all of them up to the first unused
+		 * record (id 0xf).
+		 */
+		for (i = 0; i < FTS_MAX_POINTS; i++) {
+			const u8 *p = &b[2 + 6 * i];
+			u8 id = p[2] >> 4;
+			u8 ev = p[0] >> 6;
+
+			if (id >= FTS_MAX_POINTS)
+				break;
+			if (ev == FTS_EV_UP)
+				continue;
+			fts_report_slot(ts, id, ((p[0] & 0x0f) << 8) | p[1],
+					((p[2] & 0x0f) << 8) | p[3], p[5], p[5]);
+			down |= BIT(id);
+		}
+	} else if (type == FTS_TYPE_V2) {
+		if (!count || count > FTS_MAX_POINTS)
+			return;
+		for (i = 0; i < count; i++) {
+			const u8 *p = &b[4 + 8 * i];
+			u8 id = p[2] >> 4;
+			u8 ev = p[0] >> 6;
+			u16 x, y;
+
+			if (id >= FTS_MAX_POINTS || ev == FTS_EV_UP)
+				continue;
+			x = (((p[0] & 0x0f) << 12) | (p[1] << 4) | (p[4] >> 4)) / 16;
+			y = (((p[2] & 0x0f) << 12) | (p[3] << 4) | (p[4] & 0x0f)) / 16;
+			fts_report_slot(ts, id, x, y, p[5], p[6]);
+			down |= BIT(id);
+		}
+	} else {
+		return;		/* gesture, stylus, proximity...: not handled */
+	}
+
+	/* fingers that were down before and are not reported now are lifted */
+	for (i = 0; i < FTS_MAX_POINTS; i++) {
+		if ((ts->active & ~down) & BIT(i)) {
+			input_mt_slot(ts->input, i);
+			input_mt_report_slot_state(ts->input, MT_TOOL_FINGER, false);
+		}
+	}
+	ts->active = down;
+
+	input_mt_sync_frame(ts->input);
+	input_sync(ts->input);
+}
+
+static void fts_read_and_report(struct fts_ts *ts)
+{
+	int ret = fts_read(ts, FTS_REG_TOUCH, ts->report, FTS_TOUCH_LEN);
+
+	if (ret) {
+		dev_dbg_ratelimited(&ts->spi->dev, "touch report read failed: %d\n", ret);
+		return;
+	}
+	fts_handle_report(ts);
+}
+
+static irqreturn_t fts_irq(int irq, void *data)
+{
+	fts_read_and_report(data);
+	return IRQ_HANDLED;
+}
+
+static void fts_poll(struct input_dev *input)
+{
+	fts_read_and_report(input_get_drvdata(input));
+}
+
+static void fts_reset(struct fts_ts *ts)
+{
+	if (!ts->reset)
+		return;
+	gpiod_set_value_cansleep(ts->reset, 1);	/* asserted = line low */
+	usleep_range(2000, 3000);
+	gpiod_set_value_cansleep(ts->reset, 0);
+	msleep(200);
+}
+
+static int fts_probe(struct spi_device *spi)
+{
+	struct device *dev = &spi->dev;
+	struct fts_ts *ts;
+	u8 id[2] = { 0, 0 }, fw = 0;
+	int i, ret = -EIO;
+
+	spi->mode = SPI_MODE_0;
+	spi->bits_per_word = 8;
+	if (spi_hz)
+		spi->max_speed_hz = spi_hz;
+	ret = spi_setup(spi);
+	if (ret)
+		return dev_err_probe(dev, ret, "spi_setup failed\n");
+
+	ts = devm_kzalloc(dev, sizeof(*ts), GFP_KERNEL);
+	if (!ts)
+		return -ENOMEM;
+	ts->spi = spi;
+	ts->tx = devm_kzalloc(dev, FTS_BUF_LEN, GFP_KERNEL);
+	ts->rx = devm_kzalloc(dev, FTS_BUF_LEN, GFP_KERNEL);
+	if (!ts->tx || !ts->rx)
+		return -ENOMEM;
+
+	ret = devm_regulator_get_enable(dev, "vdd");
+	if (ret)
+		return dev_err_probe(dev, ret, "cannot enable vdd\n");
+
+	ts->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
+	if (IS_ERR(ts->reset))
+		return dev_err_probe(dev, PTR_ERR(ts->reset), "cannot get reset gpio\n");
+	fts_reset(ts);
+
+	/* the firmware needs a moment after power-up / reset before it answers */
+	for (i = 0; i < 5; i++) {
+		ret = fts_read_reg(ts, FTS_REG_CHIP_ID, &id[0]);
+		if (!ret)
+			ret = fts_read_reg(ts, FTS_REG_CHIP_ID2, &id[1]);
+		if (!ret && id[0] && id[1])
+			break;
+		ret = -ENODEV;
+		msleep(200);
+	}
+	if (ret)
+		return dev_err_probe(dev, ret,
+				     "no valid chip id (read 0x%02x%02x, raw %*ph): all 00/ff = no answer (supply, pin mux, CS?), bad CRC = speed/mode\n",
+				     id[0], id[1], (int)sizeof(ts->last_rx), ts->last_rx);
+	fts_read_reg(ts, FTS_REG_FW_VER, &fw);
+	dev_info(dev, "chip id 0x%02x%02x, firmware version %u, SPI %u Hz\n",
+		 id[0], id[1], fw, spi->max_speed_hz);
+
+	ts->input = devm_input_allocate_device(dev);
+	if (!ts->input)
+		return -ENOMEM;
+	ts->input->name = "FocalTech FT3681 touchscreen";
+	ts->input->phys = "fts-spi/input0";
+	ts->input->id.bustype = BUS_SPI;
+	input_set_drvdata(ts->input, ts);
+
+	input_set_abs_params(ts->input, ABS_MT_POSITION_X, 0, FTS_DEFAULT_X - 1, 0, 0);
+	input_set_abs_params(ts->input, ABS_MT_POSITION_Y, 0, FTS_DEFAULT_Y - 1, 0, 0);
+	input_set_abs_params(ts->input, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
+	input_set_abs_params(ts->input, ABS_MT_TOUCH_MINOR, 0, 255, 0, 0);
+	touchscreen_parse_properties(ts->input, true, &ts->prop);
+
+	ret = input_mt_init_slots(ts->input, FTS_MAX_POINTS, INPUT_MT_DIRECT);
+	if (ret)
+		return ret;
+
+	if (spi->irq > 0) {
+		unsigned long flags = irq_get_trigger_type(spi->irq) ?: IRQF_TRIGGER_FALLING;
+
+		ret = devm_request_threaded_irq(dev, spi->irq, NULL, fts_irq,
+						flags | IRQF_ONESHOT, "fts-spi", ts);
+		if (ret)
+			return dev_err_probe(dev, ret, "cannot request irq %d\n", spi->irq);
+	} else {
+		ret = input_setup_polling(ts->input, fts_poll);
+		if (ret)
+			return ret;
+		input_set_poll_interval(ts->input, FTS_POLL_MS);
+		dev_info(dev, "no interrupt: polling every %d ms while open\n", FTS_POLL_MS);
+	}
+
+	return input_register_device(ts->input);
+}
+
+static const struct of_device_id fts_of_match[] = {
+	{ .compatible = "focaltech,ft3681" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, fts_of_match);
+
+static const struct spi_device_id fts_spi_id[] = {
+	{ "ft3681" },
+	{ }
+};
+MODULE_DEVICE_TABLE(spi, fts_spi_id);
+
+static struct spi_driver fts_driver = {
+	.driver = {
+		.name = "focaltech-fts-spi",
+		.of_match_table = fts_of_match,
+	},
+	.id_table = fts_spi_id,
+	.probe = fts_probe,
+};
+module_spi_driver(fts_driver);
+
+MODULE_DESCRIPTION("FocalTech FT3681 SPI touchscreen driver");
+MODULE_LICENSE("GPL");

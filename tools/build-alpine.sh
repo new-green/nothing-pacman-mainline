@@ -27,7 +27,7 @@ PACKAGES=(bash htop nano fastfetch evtest "$@")
 DESKTOP="${DESKTOP:-0}"
 SUFFIX=""
 if [[ "$DESKTOP" == 1 ]]; then
-	PACKAGES+=(xorg-server xf86-video-fbdev xinit xfwm4 xfce4-panel xfdesktop xfce4-session
+	PACKAGES+=(xorg-server xf86-video-fbdev xf86-input-evdev xinit xfwm4 xfce4-panel xfdesktop xfce4-session
 		xfce4-settings xfce4-terminal font-dejavu dbus dbus-x11 x11vnc)
 	SUFFIX="-desktop"
 fi
@@ -177,9 +177,54 @@ dbus-daemon --system --fork > /dev/null 2>&1
 
 # XFCE's own xinitrc sets up the session environment (XDG dirs, dbus, xrdb) before
 # xfce4-session. Client output also goes to the kernel log so it survives in pstore.
+# Hardware keys (power, volume up/down) as X keyboards and the touchscreen as an absolute
+# pointer, all through evdev. Device numbers are not fixed, so the config is generated from
+# the input devices that exist when X starts (no hotplug: AutoAddDevices is off). If X dies
+# quickly with it, the next start runs without it. The touchscreen reports portrait panel
+# coordinates; X is rotated CW (RandR "right"), hence the matrix. Override it for a test by
+# writing 9 numbers to /tmp/pacman-touch-matrix and restarting X.
+KEYS=/etc/X11/xorg.conf.d/20-pacman-keys.conf
+rm -f "$KEYS"
+if [ ! -e /tmp/pacman-keys-conf.failed ]; then
+	n=0
+	for d in /sys/class/input/event*; do
+		case "$(cat "$d/device/name" 2>/dev/null)" in
+		mt6363-keys|mt6779-keypad) ;;
+		*FT3681*)
+			m="0 1 0 -1 0 1 0 0 1"
+			[ -s /tmp/pacman-touch-matrix ] && m=$(cat /tmp/pacman-touch-matrix)
+			cat >> "$KEYS" <<KEOF
+Section "InputDevice"
+	Identifier "pacman-touch"
+	Driver "evdev"
+	Option "Device" "/dev/input/${d##*/}"
+	Option "AutoServerLayout" "on"
+	Option "TransformationMatrix" "$m"
+EndSection
+KEOF
+			continue ;;
+		*) continue ;;
+		esac
+		cat >> "$KEYS" <<KEOF
+Section "InputDevice"
+	Identifier "pacman-keys$n"
+	Driver "evdev"
+	Option "Device" "/dev/input/${d##*/}"
+	Option "AutoServerLayout" "on"
+EndSection
+KEOF
+		n=$((n + 1))
+	done
+fi
+
+t0=$(cut -d. -f1 /proc/uptime)
 xinit /etc/xdg/xfce4/xinitrc -- /usr/bin/Xorg :0 vt1 -nolisten tcp -noreset \
 	-logfile /tmp/Xorg.0.log > /tmp/xfce-session.log 2>&1
 rc=$?
+if [ -e "$KEYS" ] && [ $(( $(cut -d. -f1 /proc/uptime) - t0 )) -lt 20 ]; then
+	touch /tmp/pacman-keys-conf.failed
+	echo "pacman-desktop: X exited quickly with the keys config, retrying without it" > /dev/kmsg
+fi
 tail -n 15 /tmp/xfce-session.log | while IFS= read -r l; do echo "pacman-desktop: $l" > /dev/kmsg; done
 exit $rc
 XEOF
