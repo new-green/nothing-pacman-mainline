@@ -36,29 +36,39 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 - Downstream source (vendor 5.15): github.com/NothingOSS/android_kernel_5.15_nothing_mt6886
   (branch `mt6886/Pacman/t`) + android_kernel_modules_nothing_mt6886. `gh` is logged in.
 
+## Branches (2026-11-10)
+Both repos have the same three branches, each built on the previous one:
+- `master` (port) / `pacman-7.3` (linux): XFCE over VNC, keys, touch (modules loaded by hand), 12 patches.
+- `sxmo`: + modules loaded at boot, panel margins, opaque OVL layer (X was invisible on the panel
+  before), sxmo phone UI (`UI=sxmo`), 14 patches.
+- `phosh` (**current, checked out in both repos**): + `pacman-drm` KMS driver instead of pacman-cmdfb,
+  Phosh loaded into RAM over USB (`tools/phosh-up.sh`), 15 patches. The sxmo image is its base.
+
 ## What works (2026-11-10)
 | Area | State |
 |---|---|
 | Kernel | stable 7.3.3 + our patches (branch `pacman-7.3`; old 7.4-rc1 branch `pacman` kept), slim config (MediaTek only), 8 CPUs, GICv3, timer, PSCI, mtk-wdt, ramoops |
-| Display | `pacman-cmdfb` fbdev on LK's framebuffer, fbcon, mmap; hides LK's Orange State layer |
+| Display | phosh branch: `pacman-drm` KMS (+ fb0 emulation) on LK's framebuffer; master/sxmo: `pacman-cmdfb` fbdev. Both hide LK's Orange State layer, make our OVL layer opaque (sxmo+), leave the rounded corners out (112/64 rows, sxmo+) |
 | USB | mtu3 peripheral + xsphy u2, `force-vbus`; g_cdc = ACM (ttyGS0) + ECM network (usb0), 42 MB/s PC->phone |
 | Shell | busybox root shell on ttyGS0 (PC: /dev/ttyACM0), kernel console on ttyGS0 |
 | Thermal | `mtk_therm_intf`: cpu0..7 + gpu zones from MCUPM firmware SRAM, critical 95 °C |
 | Reboot | `pacman-reboot bootloader` -> LK fastboot (no key combo needed) |
 | SPMI/PMIC | mainline `spmi-mtk-pmif` with MT8195 data reads the MT6363 (chip id 0x63) |
 | Keys | power + volume up via MT6363 TOPSTATUS, polled (`mt6363-keys-polled`); volume down = SoC keypad (mainline `mt6779-keypad`, DTB test-K+); `pacman-keysd`: power short press = blank/unblank (cmdfb fb_blank = OVL layer off); all keys in Xorg via evdev |
-| Touch | FT3681 on SPI3, own `focaltech-fts-spi` (polled 60 Hz), spi-mt65xx MT6985 compat, DTB test-T; modules loaded by `tools/touch-bringup.sh` (`MODDIR=<checkpoint>/modules` for an older image); works in evtest + XFCE (2026-11-10) |
-| UI | boot log on fbcon, then slim XFCE on Xorg/fbdev (landscape, 2x), controlled over VNC (172.16.42.1:5900); login prompt on tty1 as fallback |
-| Missing | clocks, pinctrl/EINT (touch irq), PMIC core/IRQs, regulators, UFS, cpufreq (module exists, not loaded), battery, Wi-Fi, GPU |
+| Touch | FT3681 on SPI3, own `focaltech-fts-spi` (polled 60 Hz), spi-mt65xx MT6985 compat, DTB test-T; loaded at boot by /pacman-init after a read-only SPI3 gate check (sxmo+; on master by `tools/touch-bringup.sh`) |
+| cpufreq | mainline `mediatek-cpufreq-hw` module, loaded at boot (sxmo+): A510 0.48-2.0 GHz, A715 0.4-2.8 GHz, schedutil |
+| UI | boot log on fbcon, then (by branch) XFCE on Xorg/fbdev over VNC, sxmo (X11/dwm, on the panel, touch + keys), or Phosh on KMS (RAM-loaded, lock PIN 1234); login prompt on tty1 as fallback |
+| Missing | clocks, pinctrl/EINT (touch irq), PMIC core/IRQs, regulators, RTC (clock set from the PC), UFS, battery, audio, Wi-Fi, modem, GPU |
 | PMIC SPT | MT6363 Self-Protection Timer reset the phone after 1.5-26 min; init turns it off at boot (SOLVED, see below) |
 
 **Images** (`out/`; a copy of the pair is in the latest `checkpoint/` folder):
-- **Current known-good pair:** `pacman-touch1-boot.img` + `pacman-touch1-vendor_boot.img` (7.3.3 + 12
-  patches built as `-dirty` just before they were committed, DTB test-T, keys + blank, SPI/touch/
-  cpufreq-hw as modules: the matching .ko files are in `modules/` of the first checkpoint taken after
-  the commit (`checkpoint.sh --list`); modules rebuilt from the committed tree have another vermagic
-  -> rebuild the image pair too).
-- Previous pairs: `pacman-keys3-*` (keys, DTB test-K), `pacman-desktop-*` (7.3.3 + 9 patches, test-P).
+- **Current known-good pair (phosh branch):** `pacman-phosh1-boot.img` (7.3.3-00015, pacman-drm,
+  modules in the initramfs) + `pacman-phosh1-vendor_boot.img` (sxmo rootfs, DTB test-T). Boots into
+  sxmo; `tools/phosh-up.sh` switches to Phosh. Verified 2026-11-10 (PIN, power key off/on).
+- Earlier pairs: sxmo branch = `pacman-sxmo5-boot.img` + `pacman-sxmo4-vendor_boot.img`
+  (cmdfb, opaque layer); master = `pacman-touch1-*` (12 patches built `-dirty`; its .ko files are in
+  checkpoint 2026-11-10-1701/modules); `pacman-keys3-*` (test-K), `pacman-desktop-*` (9 patches, test-P).
+  Intermediate test images (sxmo1-4, drm1-2) are superseded.
 - Also in `out/`: `pacman-alpine-vendor_boot.img` (Alpine without desktop, test-P; default output of
   build-vendor-boot.sh) and `pacman-usb1-vendor_boot.img` (stock Android ramdisk + test-U DTB: no
   SPMI -> the SPT cannot be turned off -> resets after minutes). Both pair with the desktop boot image.
@@ -97,7 +107,8 @@ kernel commits on `linux/` branch `pacman-7.3`, regenerate the series:
 ## Layout (~/pacman)
 - `linux/` shallow clone; branch `pacman-7.3` = v7.3.3 (stable) + our 12 commits: DTS + cmdfb, cmdfb
   mmap, mtu3 force-vbus, mtk_therm_intf, cmdfb hide LK layers, SPMI MT6886, MT6363 polled keys,
-  xsphy force-bit backport, SPT attribute, cmdfb fb_blank, spi-mt65xx MT6985, FT3681 touch driver. Old branch `pacman` = first 7 on 7.4-rc1 (fa4ad798f).
+  xsphy force-bit backport, SPT attribute, cmdfb fb_blank, spi-mt65xx MT6985, FT3681 touch driver.
+  Branch `sxmo` = + cmdfb margins, cmdfb opaque layer (14); `phosh` = + pacman-drm (15). Old branch `pacman` = first 7 on 7.4-rc1 (fa4ad798f).
   Untracked there: `scripts/gen_init_cpio` (build artifact). The config fragment is `port/pacman.config`.
 - `port/` (git, master, pushed to GitHub): `pacman.config`, `kernel-patches/` (git am series on
   `v7.3.3`), `drivers/` (copies of our three own drivers), `LICENSE`, `README.md`, `docs/COMMANDS.md`,
@@ -230,7 +241,7 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 - Kernel: `pacman-drm` (drivers/gpu/drm/sysfb/pacman-drm.c, drm_sysfb helpers) replaces pacman-cmdfb:
   KMS for Wayland, fb0 via fbdev emulation (fbcon, Xorg fbdev keep working). Kicks coalesced (16 ms),
   only damaged rows cleaned; CRTC disable = OVL layer off. Params pacman_drm.top_margin/bottom_margin.
-  Tested image: `out/pacman-drm2-boot.img` + `out/pacman-sxmo5-vendor_boot.img` (sxmo as base).
+  Image: `out/pacman-phosh1-boot.img` + `out/pacman-phosh1-vendor_boot.img` (sxmo as base).
 - Phosh rootfs (`UI=phosh tools/build-alpine.sh`): 821 MB / 282 MB gz -> does NOT fit vendor_boot.
   `tools/phosh-up.sh` sends it over USB into /tmp/phosh (~8 s at 36 MB/s) and runs `phosh-start`
   (initramfs): parks the X desktop (/tmp/pacman-desktop.stop), stops pacman-keysd, mounts the chroot,
@@ -374,11 +385,13 @@ The owner wants a usable Linux on the phone but does NOT plan to move it to Linu
 only boot_b/vendor_boot_b are ever written and the phone always goes back to stock.
 Done (2026-11-09): boot, display, USB serial + network, thermal, reboot-to-fastboot, Alpine as
 root filesystem, SPMI + PMIC keys, SPT fix, slim XFCE over VNC, move to 7.3.3 stable.
+Done (2026-11-10): all three keys + panel blanking, touchscreen, cpufreq, modules at boot, panel
+margins + opaque layer (X visible on the panel), sxmo, KMS driver, Phosh (RAM-loaded).
 Next ideas, roughly by value:
-1. Use the keys on the phone itself (power key: blank/unblank or a small menu; needs an input
-   driver in Xorg, e.g. xf86-input-libinput) so the desktop is usable without the PC.
-2. pinctrl/GPIO for MT6886 (volume down, touch reset/irq), then SPI + the FocalTech touchscreen.
-3. A real MT6363 core driver (IRQs, regulators, RTC -> correct clock), cpufreq-hw.
-4. Clean minimal DTB (without copied reserved regions); UFS read-only first; battery/charger (MT6375).
+1. pinctrl/EINT for MT6886 -> touch interrupt instead of 60 Hz polling (CPU, latency; libinput
+   under Phosh reports lag).
+2. Battery level (MT6375 gauge over I2C, read-only) and whether mainline charges at all; RTC.
+3. Phosh polish: UPower/logind gaps, smaller rootfs (webkitgtk via gnome-control-center), autostart.
+4. Clean minimal DTB (without copied reserved regions); UFS read-only first.
 References: postmarketOS linux-postmarketos-mediatek-mt6878, mainline MT8188/MT8195/MT8196, TF-A
 plat/mediatek.
