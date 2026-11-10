@@ -160,7 +160,9 @@ Layout: downstream drivers/thermal/mediatek/thermal_interface.h. +0x330 = firmwa
 temperature (writable — don't). Idle 35-38 °C. `mediatek,cpufreq-hw` node (perf domains @0x11bc10/0x11bd30)
 matches mainline `mediatek-cpufreq-hw` exactly; it is built as a module (=m) but no module was ever
 loaded -> no cpufreq, CPUs stay at LK's ~1.25/1.0 GHz (see ~/pacman/PERFORMANS_TESTLERI.md: A715
-only 1.58x A510). Loading it writes REG_FREQ_ENABLE/PERF_STATE (DVFS firmware): ask the owner first.
+only 1.58x A510). Loading it writes REG_FREQ_ENABLE/PERF_STATE (DVFS firmware). Loaded once with the owner's OK (2026-11-10): policy0 = cpu0-5
+480000-2000000 kHz, policy6 = cpu6-7 400000-2800000 kHz, schedutil, frequencies follow load
+(policy0 1.3 GHz under load), 39 -> 46 °C in a short test. Not loaded at boot yet.
 
 **Reboot mode.** `watchdog@1c007000/reboot-mode` (syscon-reboot-mode, TOPRGU +0x24, mask 0xf):
 charger 1, recovery 2, bootloader 3, … `SYSCON_REBOOT_MODE=y` (defconfig). PSCI does the reset
@@ -219,6 +221,27 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   `dd if=/dev/mem bs=4096 skip=$((0x33ffb0000/4096)) count=64 | strings | grep -E "RGU|PMIC|SELFWDT"`
   (mblock-10-log_store, 256 KiB at 0x33ffb0000, contains preloader+LK log of the current boot).
 - Normal-boot reference: logs/pl_lk.txt (stock, SELFWDT=0x0).
+
+## sxmo phone UI (branch `sxmo` in port/ and linux/, WORKS 2026-11-10)
+- Images: `out/pacman-sxmo3-boot.img` (+ cmdfb margins, kernel 7.3.3-00012-dirty with the four
+  modules in its initramfs) + `out/pacman-sxmo4-vendor_boot.img` (`UI=sxmo tools/build-alpine.sh`,
+  rootfs-sxmo 161 MB, 37 MB vendor_boot, DTB test-T).
+- Boot: /pacman-init loads cpufreq-hw and (after reading the SPI3 gate/mux) the touch modules from
+  /pacman/lib/modules -> nothing to do from the PC. Build order: `make modules` THEN `make Image.lz4`
+  (initramfs.list takes the .ko files from the tree).
+- Panel margins: `pacman_cmdfb.top_margin=112 bottom_margin=64` (cmdline) hide the rounded corners
+  and camera hole; X screen is 1080x2236; touch matrix maps panel y to it (pacman-desktop computes
+  it from /sys/module/pacman_cmdfb/parameters and fb0 virtual_size).
+- sxmo refuses root: Xorg runs as root, the session (`/usr/local/bin/pacman-sxmo-session`) runs as
+  `user` (uid 1000; home chowned at start, doas nopass). sxmo_migrate rewrites ~/.Xresources
+  (Xft.dpi 192): DPI 288 is merged from ~/.config/sxmo/xinit (copied from the template, same
+  configversion). Device profile `/usr/bin/sxmo_deviceprofile_pacman.sh` (SXMO_DEVICE_NAME=pacman):
+  no modem/audio/LEDs, lisgd device = the FT3681 event node.
+- lisgd uses libinput, which rejects devices udev has not processed ("udev device never
+  initialized"): the session starts eudev's udevd and triggers ONLY the input subsystem (a
+  triggered net device could be renamed -> usb0 lost). pacman-keysd is stopped (sxmo owns power).
+- Missing in sxmo: audio, modem, battery (battery_monitor fails), conky. Font: Droid Sans Mono Nerd
+  (7 MB) aliased as "Sxmo" instead of the 31 MB DejaVu Nerd font.
 
 ## XFCE desktop (WORKS 2026-11-09)
 - `DESKTOP=1 tools/build-alpine.sh` -> `~/pacman/alpine/rootfs-desktop`: xorg-server, xf86-video-fbdev,

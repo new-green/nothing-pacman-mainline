@@ -44,6 +44,28 @@ else
 	echo "pacman-init: no $SPT (SPMI/PMIC driver missing): expect PMIC resets" > /dev/kmsg
 fi
 
+# Modules built with this kernel (ui/initramfs.list): cpufreq (MCUPM DVFS firmware interface),
+# then the touchscreen on SPI3. Touching the SPI block while its clock gate is closed hangs the
+# bus (watchdog reset), so check the gate (pericfg_ao PERAO0 bit 15) and the source mux
+# (topckgen CLK_CFG_5 bit 31) first; LK has always left both on so far. Reads only.
+M=/pacman/lib/modules
+if [ -d $M ]; then
+	insmod $M/mediatek-cpufreq-hw.ko && echo "pacman-init: cpufreq-hw loaded" > /dev/kmsg
+	gate=$(( ($(devmem 0x11036010 32) >> 15) & 1 ))
+	cfg=$(devmem 0x10000060 32)
+	if [ $gate = 0 ] && [ $(( (cfg >> 31) & 1 )) = 0 ]; then
+		# the DT assumes the fastest SPI source (208 MHz): ask for 6 MHz * 208 / real rate
+		set -- 26 208 182 156 136 124 104 78
+		shift $(( (cfg >> 24) & 7 ))
+		insmod $M/crc-ccitt.ko
+		insmod $M/spi-mt65xx.ko
+		insmod $M/focaltech-fts-spi.ko spi_hz=$(( 6000000 * 208 / $1 )) &&
+			echo "pacman-init: touchscreen loaded (SPI source ~$1 MHz)" > /dev/kmsg
+	else
+		echo "pacman-init: SPI3 clock gate/mux off ($gate/$cfg): touchscreen NOT loaded" > /dev/kmsg
+	fi
+fi
+
 # Hardware keys: power = blank/unblank the panel (see ui/pacman-keysd.c).
 /pacman/bin/pacman-keysd < /dev/null > /dev/null 2>&1 &
 

@@ -1,7 +1,7 @@
 From 465aa355aec0b287b749085278ee5f511815a2ab Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 13:18:16 +0300
-Subject: [PATCH 02/12] fbdev: pacman-cmdfb: implement fb_mmap
+Subject: [PATCH 02/13] fbdev: pacman-cmdfb: implement fb_mmap
 
 Without .fb_mmap the fbdev core rejects mmap() with -ENODEV (and a
 WARN), so userspace like pacman-dash cannot map /dev/fb0.

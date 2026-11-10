@@ -1,7 +1,7 @@
 From 00edef3506869944298c7fd14fb36bbb055f6c62 Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 17:00:12 +0300
-Subject: [PATCH 11/12] spi: mt65xx: add MT6985 compatible (used by MT6886)
+Subject: [PATCH 11/13] spi: mt65xx: add MT6985 compatible (used by MT6886)
 
 The SPI controllers of MT6886 are described as mediatek,mt6985-spi. The
 vendor kernel data is like MT6991 (pad select, enhanced timing, extended

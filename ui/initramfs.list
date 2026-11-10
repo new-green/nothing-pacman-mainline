@@ -20,6 +20,14 @@ file /pacman/bin/alpine ../port/ui/alpine-enter.sh 0755 0 0
 # Needs the slim kernel (pacman.config): with the full defconfig this pushed the Image over
 # LK's limit (see CLAUDE.md).
 file /pacman/bin/fastfetch ../fastfetch/fastfetch 0755 0 0
+# Loadable modules of this kernel, loaded by /pacman-init. Build them BEFORE the image:
+# make modules && make Image.lz4 (the files are taken from the kernel tree as they are).
+dir /pacman/lib 0755 0 0
+dir /pacman/lib/modules 0755 0 0
+file /pacman/lib/modules/crc-ccitt.ko lib/crc/crc-ccitt.ko 0644 0 0
+file /pacman/lib/modules/spi-mt65xx.ko drivers/spi/spi-mt65xx.ko 0644 0 0
+file /pacman/lib/modules/focaltech-fts-spi.ko drivers/input/touchscreen/focaltech-fts-spi.ko 0644 0 0
+file /pacman/lib/modules/mediatek-cpufreq-hw.ko drivers/cpufreq/mediatek-cpufreq-hw.ko 0644 0 0
 dir /pacman/etc 0755 0 0
 file /pacman/etc/os-release ../port/ui/os-release 0644 0 0
 file /pacman/etc/udhcpd.conf ../port/ui/udhcpd.conf 0644 0 0

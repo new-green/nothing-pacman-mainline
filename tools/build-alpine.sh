@@ -6,6 +6,7 @@
 #
 #   bash ~/pacman/port/tools/build-alpine.sh [extra packages...]
 #   DESKTOP=1 bash ~/pacman/port/tools/build-alpine.sh    slim XFCE desktop -> rootfs-desktop/
+#   UI=sxmo bash ~/pacman/port/tools/build-alpine.sh      sxmo (X11/dwm phone UI) -> rootfs-sxmo/
 #
 # DESKTOP=1 adds Xorg (fbdev), a slim XFCE (no xfce4 meta package), x11vnc and dbus, then removes
 # Mesa's LLVM/gallium (~200 MiB): there is no GPU driver, Xorg runs on fbdev with GLX disabled.
@@ -25,11 +26,22 @@ NCOPA_FPR=0482D84022F52DF1C4E7CD43293ACD0907D9495A
 APKTOOLS=apk-tools-static-3.0.9-r0
 PACKAGES=(bash htop nano fastfetch evtest "$@")
 DESKTOP="${DESKTOP:-0}"
+UI="${UI:-xfce}"
+[[ "$UI" == sxmo ]] && DESKTOP=1
 SUFFIX=""
 if [[ "$DESKTOP" == 1 ]]; then
-	PACKAGES+=(xorg-server xf86-video-fbdev xf86-input-evdev xinit xfwm4 xfce4-panel xfdesktop xfce4-session
-		xfce4-settings xfce4-terminal font-dejavu dbus dbus-x11 x11vnc)
-	SUFFIX="-desktop"
+	PACKAGES+=(xorg-server xf86-video-fbdev xf86-input-evdev xinit font-dejavu dbus dbus-x11 x11vnc)
+	if [[ "$UI" == sxmo ]]; then
+		# sxmo's X11 session (dwm) and the helpers its start hook launches through superd;
+		# a 7 MB Nerd font instead of the 31 MB DejaVu one sxmo asks for (alias below)
+		PACKAGES+=(sxmo-utils sxmo-dwm sxmo-dmenu sxmo-st sxmobar svkbd lisgd superd bonsai dunst xob
+			unclutter-xfixes autocutsel xdotool xinput xrandr xsetroot xmodmap xprop xset xrdb xclip
+			xsel inotify-tools xdg-user-dirs libnotify xprintidle feh eudev font-droid-sans-mono-nerd)
+		SUFFIX="-sxmo"
+	else
+		PACKAGES+=(xfwm4 xfce4-panel xfdesktop xfce4-session xfce4-settings xfce4-terminal)
+		SUFFIX="-desktop"
+	fi
 fi
 
 TOP="${PACMAN:-$HOME/pacman}/alpine"
@@ -123,8 +135,80 @@ Section "Device"
 	Option "Rotate" "CW"
 EndSection
 XEOF
+	echo "$UI" > "$ROOT/etc/pacman-ui"
+	if [[ "$UI" == sxmo ]]; then
+		# sxmo is a portrait UI: no rotation
+		sed -i '/Option "Rotate"/d' "$ROOT/etc/X11/xorg.conf.d/10-pacman.conf"
+		# device profile (SXMO_DEVICE_NAME=pacman is set by pacman-desktop)
+		cat > "$ROOT/usr/bin/sxmo_deviceprofile_pacman.sh" <<'XEOF'
+#!/bin/sh
+# Nothing Phone (2a) on mainline (pacman port): no modem, audio or LEDs yet.
+export SXMO_NO_MODEM=1 SXMO_NO_AUDIO=1 SXMO_DISABLE_LEDS=1
+export SXMO_TOUCHSCREEN_ID="pacman-touch"
+for d in /sys/class/input/event*; do
+	case "$(cat "$d/device/name" 2>/dev/null)" in
+	*FT3681*) export SXMO_LISGD_INPUT_DEVICE="/dev/input/${d##*/}" ;;
+	esac
+done
+XEOF
+		chmod 0755 "$ROOT/usr/bin/sxmo_deviceprofile_pacman.sh"
+		# sxmo refuses to run as root: its session runs as "user" (Xorg stays root)
+		grep -q '^user:' "$ROOT/etc/passwd" || {
+			echo 'user:x:1000:1000:user:/home/user:/bin/sh' >> "$ROOT/etc/passwd"
+			echo 'user:x:1000:' >> "$ROOT/etc/group"
+			echo 'user:!::0:::::' >> "$ROOT/etc/shadow"
+			for g in video input audio tty; do
+				sed -i "s/^\($g:[^:]*:[^:]*:\)\(.*\)$/\1\2,user/; s/:,user$/:user/" "$ROOT/etc/group"
+			done
+		}
+		echo 'permit nopass user' > "$ROOT/etc/doas.conf"
+		mkdir -p "$ROOT/home/user"
+		# 1080x2412 panel: scale sxmo's 11 pt fonts up
+		printf 'Xft.dpi: 288\n' > "$ROOT/home/user/.Xresources"
+		mkdir -p "$ROOT/usr/local/bin"
+		cat > "$ROOT/usr/local/bin/pacman-sxmo-session" <<'XEOF'
+#!/bin/sh
+# xinit client for sxmo: sxmo refuses to run as root, so the session runs as "user"
+# (Xorg itself stays root for fb0/vt). Rootfs files are root-owned (built as a cpio
+# without owners), so the home and runtime dirs are handed over here at every start.
+chown -R user:user /home/user
+mkdir -p /run/user/1000 && chown user:user /run/user/1000 && chmod 0700 /run/user/1000
+# lisgd (gestures) and bonsaid read the input devices as the user; single-user device
+chmod 0666 /dev/input/event*
+# lisgd uses libinput, which only accepts devices udev has processed: run udevd, but
+# trigger the input subsystem only (a triggered net device could get renamed -> no usb0)
+if command -v udevd > /dev/null && ! pgrep -x udevd > /dev/null; then
+	udevd --daemon
+	udevadm trigger --subsystem-match=input --action=add
+	udevadm settle -t 5
+fi
+# sxmo replaces ~/.Xresources (Xft.dpi 192) on first start; raise the DPI from its xinit
+# file (sourced before dwm starts). Same configversion as the template: no migration.
+X=/home/user/.config/sxmo/xinit
+mkdir -p "${X%/*}"
+cp /usr/share/sxmo/appcfg/xinit_template "$X"
+printf 'echo "Xft.dpi: 288" | xrdb -merge -\n' >> "$X"
+chown -R user:user /home/user/.config
+exec su -s /bin/sh user -c 'exec env -i HOME=/home/user USER=user LOGNAME=user SHELL=/bin/sh \
+	PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin XDG_RUNTIME_DIR=/run/user/1000 \
+	DISPLAY=:0 SXMO_DEVICE_NAME=pacman /usr/bin/sxmo_dwminit.sh'
+XEOF
+		chmod 0755 "$ROOT/usr/local/bin/pacman-sxmo-session"
+		mkdir -p "$ROOT/etc/fonts/conf.d"
+		cat > "$ROOT/etc/fonts/conf.d/60-pacman-sxmo.conf" <<'XEOF'
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <alias>
+    <family>Sxmo</family>
+    <prefer><family>DroidSansM Nerd Font</family></prefer>
+  </alias>
+</fontconfig>
+XEOF
+	fi
 
 	# XFCE: 2x scaling (1080x2412 panel), big window decorations, no GL compositor
+	[[ "$UI" == sxmo ]] || {
 	X="$ROOT/root/.config/xfce4/xfconf/xfce-perchannel-xml"
 	mkdir -p "$X"
 	cat > "$X/xsettings.xml" <<'XEOF'
@@ -147,12 +231,15 @@ XEOF
   </property>
 </channel>
 XEOF
+	}
 
 	# started by /pacman-init instead of the login prompt when present
 	mkdir -p "$ROOT/usr/local/bin"
 	cat > "$ROOT/usr/local/bin/pacman-desktop" <<'XEOF'
 #!/bin/sh
-# XFCE on the panel (Xorg on fb0, vt1) + x11vnc on the USB network (PC: vncviewer 172.16.42.1).
+# XFCE or sxmo (/etc/pacman-ui) on the panel (Xorg on fb0, vt1) + x11vnc on the USB network
+# (PC: vncviewer 172.16.42.1).
+UI=$(cat /etc/pacman-ui 2>/dev/null || echo xfce)
 export HOME=/root USER=root LOGNAME=root SHELL=/bin/sh
 export XDG_RUNTIME_DIR=/run/user/0 PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/pacman/bin
 mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
@@ -191,7 +278,18 @@ if [ ! -e /tmp/pacman-keys-conf.failed ]; then
 		case "$(cat "$d/device/name" 2>/dev/null)" in
 		mt6363-keys|mt6779-keypad) ;;
 		*FT3681*)
-			m="0 1 0 -1 0 1 0 0 1"
+			# The panel rows hidden by pacman_cmdfb's margins are not part of the X screen:
+			# map panel y to the shown rows (s, t), then rotate for XFCE (X is rotated CW).
+			P=/sys/module/pacman_cmdfb/parameters
+			st=$(LC_ALL=C awk -v t="$(cat $P/top_margin 2>/dev/null || echo 0)" \
+				-v b="$(cat $P/bottom_margin 2>/dev/null || echo 0)" \
+				-v y="$(cut -d, -f2 /sys/class/graphics/fb0/virtual_size)" \
+				'BEGIN { printf "%.6f %.6f", (y + t + b) / y, -t / y }')
+			if [ "$UI" = sxmo ]; then
+				m="1 0 0 0 $st 0 0 1"
+			else
+				m="0 $st -1 0 1 0 0 1"
+			fi
 			[ -s /tmp/pacman-touch-matrix ] && m=$(cat /tmp/pacman-touch-matrix)
 			cat >> "$KEYS" <<KEOF
 Section "InputDevice"
@@ -217,8 +315,15 @@ KEOF
 	done
 fi
 
+CLIENT=/etc/xdg/xfce4/xinitrc
+if [ "$UI" = sxmo ]; then
+	# sxmo handles the power key itself (screen off via DPMS -> our fb_blank)
+	pkill -x pacman-keysd
+	CLIENT=/usr/local/bin/pacman-sxmo-session
+fi
+
 t0=$(cut -d. -f1 /proc/uptime)
-xinit /etc/xdg/xfce4/xinitrc -- /usr/bin/Xorg :0 vt1 -nolisten tcp -noreset \
+xinit "$CLIENT" -- /usr/bin/Xorg :0 vt1 -nolisten tcp -noreset \
 	-logfile /tmp/Xorg.0.log > /tmp/xfce-session.log 2>&1
 rc=$?
 if [ -e "$KEYS" ] && [ $(( $(cut -d. -f1 /proc/uptime) - t0 )) -lt 20 ]; then

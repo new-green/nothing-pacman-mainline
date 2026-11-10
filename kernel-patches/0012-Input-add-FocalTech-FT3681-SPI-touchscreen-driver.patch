@@ -1,7 +1,7 @@
 From 60244999062d99d08a105e09b2aabcda451e200b Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 17:00:12 +0300
-Subject: [PATCH 12/12] Input: add FocalTech FT3681 SPI touchscreen driver
+Subject: [PATCH 12/13] Input: add FocalTech FT3681 SPI touchscreen driver
 
 Touch reports of the FT3681 on the Nothing Phone (2a), written from the
 SPI framing of FocalTech's vendor driver: address, 0xa0 (read with CRC),

@@ -95,6 +95,15 @@ Reads the phone's framebuffer (`/dev/fb0`) over the USB network.
 
 ## 4. On the phone
 
+### sxmo (phone UI, branch `sxmo`)
+```sh
+UI=sxmo bash ~/pacman/port/tools/build-alpine.sh       # -> ~/pacman/alpine/rootfs-sxmo
+ROOT=~/pacman/alpine/rootfs-sxmo COMP=xz OUT=~/pacman/out/pacman-sxmo-vendor_boot.img \
+  bash ~/pacman/port/tools/build-vendor-boot.sh
+```
+Gestures: swipe up from the bottom edge = keyboard, down from the top edge = menu; volume keys move
+in menus, power selects. Touch and cpufreq load at boot on this branch (no PC step).
+
 ### Keys and touchscreen
 Power (short press) blanks/unblanks the panel (`pacman-keysd`); any key wakes it. Power, volume up
 and volume down also reach Xorg as keys. The touchscreen driver is still a module: load it after

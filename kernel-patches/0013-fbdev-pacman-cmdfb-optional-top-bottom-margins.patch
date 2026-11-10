@@ -1,0 +1,134 @@
+From 8b28077c282300747cca913804b5560bdcad0d64 Mon Sep 17 00:00:00 2001
+From: NewGreen <110980503+new-green@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 17:37:15 +0300
+Subject: [PATCH 13/13] fbdev: pacman-cmdfb: optional top/bottom margins
+
+The Nothing Phone (2a) panel has rounded corners and a camera hole at the
+top: text and buttons drawn into the first and last rows can be neither
+read nor touched (sxmo's status bar sits exactly there). The parameters
+top_margin and bottom_margin leave rows out of the framebuffer that is
+exposed to fbcon and userspace; they stay black. The top margin is rounded
+up so that the exposed part starts on a page, as mmap needs.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/video/fbdev/pacman-cmdfb.c | 51 +++++++++++++++++++++++-------
+ 1 file changed, 39 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/video/fbdev/pacman-cmdfb.c b/drivers/video/fbdev/pacman-cmdfb.c
+index a6a963a65..6562e5063 100644
+--- a/drivers/video/fbdev/pacman-cmdfb.c
++++ b/drivers/video/fbdev/pacman-cmdfb.c
+@@ -18,7 +18,10 @@
+  *    framebuffer: the unlocked-bootloader ("Orange State") warning sits in
+  *    such a layer (ovl0 L1) on top of everything we draw,
+  *  - implements fb_blank by switching our own OVL layer off and on: with no
+- *    layer the OLED panel shows the black background, i.e. its pixels are off.
++ *    layer the OLED panel shows the black background, i.e. its pixels are off,
++ *  - can leave rows at the top and bottom out of the visible framebuffer
++ *    (top_margin/bottom_margin): the panel has rounded corners and a camera
++ *    hole there, where text and buttons cannot be read or touched.
+  *
+  * Bring-up hack, not meant for upstream as is.
+  */
+@@ -53,6 +56,15 @@
+ #define OVL_NUM_LAYERS		4
+ #define OVL_NUM_EXT_LAYERS	3
+ 
++static unsigned int top_margin;
++module_param(top_margin, uint, 0444);
++MODULE_PARM_DESC(top_margin,
++		 "Rows hidden at the top (rounded up so that the visible part starts on a page)");
++
++static unsigned int bottom_margin;
++module_param(bottom_margin, uint, 0444);
++MODULE_PARM_DESC(bottom_margin, "Rows hidden at the bottom");
++
+ static bool hide_lk_layers = true;
+ module_param(hide_lk_layers, bool, 0444);
+ MODULE_PARM_DESC(hide_lk_layers,
+@@ -64,7 +76,9 @@ struct pacman_cmdfb {
+ 	void __iomem *mutex;
+ 	void *vaddr;
+ 	phys_addr_t paddr;
+-	size_t visible;
++	size_t visible;		/* whole panel: what is flushed to the display */
++	size_t user_off;	/* start of the part exposed as the framebuffer */
++	size_t user_len;
+ 	int mutex_id;
+ 	struct fb_info *info;
+ 	struct delayed_work work;
+@@ -122,7 +136,7 @@ static int pacman_cmdfb_mmap(struct fb_info *info, struct vm_area_struct *vma)
+ {
+ 	struct pacman_cmdfb *p = info->par;
+ 
+-	return vm_iomap_memory(vma, p->paddr, p->visible);
++	return vm_iomap_memory(vma, p->paddr + p->user_off, p->user_len);
+ }
+ 
+ static int pacman_cmdfb_blank(int blank, struct fb_info *info)
+@@ -292,17 +306,28 @@ static int pacman_cmdfb_probe(struct platform_device *pdev)
+ 	pacman_cmdfb_dump(p);
+ 	pacman_cmdfb_scan_ovls(p);
+ 
++	/* the exposed part must start on a page (mmap) */
++	while (((size_t)top_margin * stride) % PAGE_SIZE && top_margin < height)
++		top_margin++;
++	if (top_margin + bottom_margin >= height / 2) {
++		dev_warn(dev, "margins %u/%u too large, ignored\n", top_margin, bottom_margin);
++		top_margin = 0;
++		bottom_margin = 0;
++	}
++	p->user_off = (size_t)top_margin * stride;
++	p->user_len = (size_t)stride * (height - top_margin - bottom_margin);
++
+ 	strscpy(info->fix.id, "pacman-cmdfb", sizeof(info->fix.id));
+ 	info->fix.type = FB_TYPE_PACKED_PIXELS;
+ 	info->fix.visual = FB_VISUAL_TRUECOLOR;
+-	info->fix.smem_start = p->paddr;
+-	info->fix.smem_len = p->visible;
++	info->fix.smem_start = p->paddr + p->user_off;
++	info->fix.smem_len = p->user_len;
+ 	info->fix.line_length = stride;
+ 
+ 	info->var.xres = width;
+-	info->var.yres = height;
++	info->var.yres = height - top_margin - bottom_margin;
+ 	info->var.xres_virtual = width;
+-	info->var.yres_virtual = height;
++	info->var.yres_virtual = info->var.yres;
+ 	info->var.bits_per_pixel = 32;
+ 	info->var.transp = (struct fb_bitfield){ 24, 8, 0 };
+ 	info->var.red = (struct fb_bitfield){ 16, 8, 0 };
+@@ -315,12 +340,13 @@ static int pacman_cmdfb_probe(struct platform_device *pdev)
+ 
+ 	info->fbops = &pacman_cmdfb_ops;
+ 	info->flags = FBINFO_VIRTFB;
+-	info->screen_buffer = p->vaddr;
+-	info->screen_size = p->visible;
++	info->screen_buffer = p->vaddr + p->user_off;
++	info->screen_size = p->user_len;
+ 	info->pseudo_palette = p->pseudo_palette;
+ 
+ 	/* Start from a known state: a dark grey screen means "driver is alive" */
+-	memset(p->vaddr, 0x20, p->visible);
++	memset(p->vaddr, 0, p->visible);			/* margins stay black */
++	memset(p->vaddr + p->user_off, 0x20, p->user_len);
+ 	pacman_cmdfb_kick(p);
+ 
+ 	INIT_DELAYED_WORK(&p->work, pacman_cmdfb_work);
+@@ -333,8 +359,9 @@ static int pacman_cmdfb_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	platform_set_drvdata(pdev, p);
+-	dev_info(dev, "fb%d: %ux%u stride %u at %pa, refresh every %d ms\n",
+-		 info->node, width, height, stride, &p->paddr, REFRESH_MS);
++	dev_info(dev, "fb%d: %ux%u stride %u at %pa (rows %u-%u shown), refresh every %d ms\n",
++		 info->node, width, height, stride, &p->paddr, top_margin,
++		 height - bottom_margin - 1, REFRESH_MS);
+ 	return 0;
+ 
+ err_work:
+-- 
+2.56.0
+
