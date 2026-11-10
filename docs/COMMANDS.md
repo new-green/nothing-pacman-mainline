@@ -12,8 +12,8 @@ layout from the [README](../README.md). Flash commands only ever write **`boot_b
 # stock Android -> mainline
 adb reboot bootloader
 fastboot getvar current-slot                 # must be "b"
-fastboot flash boot_b        ~/pacman/out/pacman-touch1-boot.img
-fastboot flash vendor_boot_b ~/pacman/out/pacman-touch1-vendor_boot.img
+fastboot flash boot_b        ~/pacman/out/pacman-phosh1-boot.img
+fastboot flash vendor_boot_b ~/pacman/out/pacman-phosh1-vendor_boot.img
 fastboot reboot
 
 # ... try things on the phone (sections 2-4) ...
@@ -89,42 +89,51 @@ python3 -c 'import socket,sys; s=socket.create_connection(("172.16.42.1",9000));
 python3 ~/pacman/port/tools/screenshot.py               # ~/pacman/screenshots/screen-<date>.png
 python3 ~/pacman/port/tools/screenshot.py shot.png --scale 0.5
 ```
-Reads the phone's framebuffer (`/dev/fb0`) over the USB network.
+Reads the phone's framebuffer (`/dev/fb0`) over the USB network: shows fbcon, sxmo and XFCE.
+Phosh draws through KMS directly, so under Phosh the screenshot shows an old picture.
 
 ---
 
 ## 4. On the phone
 
-### Phosh (GNOME's phone shell, branch `phosh`)
-Needs an image with the pacman-drm kernel. The Phosh root filesystem (~800 MB) is sent into RAM
-after boot; the phone must be on USB:
-```sh
-UI=phosh bash ~/pacman/port/tools/build-alpine.sh      # once: ~/pacman/alpine/alpine-rootfs-phosh.tar.gz
-bash ~/pacman/port/tools/phosh-up.sh                    # send (~8 s) + start; --start = start again
-```
-Lock screen PIN: 1234. On the phone, `phosh-start stop` returns to the X desktop.
-
-### sxmo (phone UI, branch `sxmo`)
+### sxmo (phone UI, starts by itself)
+The sxmo image (`pacman-*-vendor_boot.img` built with `UI=sxmo`) starts sxmo at ~12 s, after
+/pacman-init has loaded cpufreq and the touchscreen (it first reads that the SPI3 clock gate is
+open). Gestures: swipe up from the bottom edge = keyboard, down from the top edge = menu; volume
+keys move in menus, power selects and blanks/unblanks. The clock starts at 1970 (no RTC driver):
+`python3 ~/pacman/port/tools/pacsh.py --net run "date -s @$(date +%s)"`.
 ```sh
 UI=sxmo bash ~/pacman/port/tools/build-alpine.sh       # -> ~/pacman/alpine/rootfs-sxmo
 ROOT=~/pacman/alpine/rootfs-sxmo COMP=xz OUT=~/pacman/out/pacman-sxmo-vendor_boot.img \
   bash ~/pacman/port/tools/build-vendor-boot.sh
 ```
-Gestures: swipe up from the bottom edge = keyboard, down from the top edge = menu; volume keys move
-in menus, power selects. Touch and cpufreq load at boot on this branch (no PC step).
 
-### Keys and touchscreen
-Power (short press) blanks/unblanks the panel (`pacman-keysd`); any key wakes it. Power, volume up
-and volume down also reach Xorg as keys. The touchscreen driver is still a module: load it after
-each boot (it checks the SPI3 clock gate first, read-only):
+### Phosh (GNOME's phone shell)
+Needs the pacman-drm kernel (branch `phosh`). The Phosh root filesystem (~800 MB) does not fit
+into vendor_boot: it is sent into RAM after boot and started in a chroot, in place of sxmo. The
+phone must be on USB, and it is gone after a reboot.
+```sh
+UI=phosh bash ~/pacman/port/tools/build-alpine.sh      # once: ~/pacman/alpine/alpine-rootfs-phosh.tar.gz
+bash ~/pacman/port/tools/phosh-up.sh                    # send (~10 s) + start; --start = start again
+```
+Lock screen PIN: **1234**. The power key blanks and wakes the screen. Rendering is done by the
+CPU (no GPU driver), so animations are slow. On the phone, `phosh-start stop` returns to sxmo.
+Log: `/tmp/phosh/tmp/phosh.log` on the phone.
+
+### Keys
+Power, volume up and volume down reach the UI as keys. Without sxmo/Phosh, `pacman-keysd` makes a
+short power press blank/unblank the panel (any key wakes it).
+
+On `master` images the touchscreen is a module loaded by hand (it checks the SPI3 clock gate first,
+read-only):
 ```sh
 bash ~/pacman/port/tools/touch-bringup.sh --x          # load + restart X so it uses the touchscreen
 bash ~/pacman/port/tools/touch-bringup.sh --evtest 10   # load + show touch events for 10 s
 ```
 
 ### Login prompt on the panel
-The kernel log scrolls on the panel, at ~12 s a `pacman login:` prompt appears (user **root**,
-no password). The phone has no keyboard or touch driver yet, so type from the PC:
+Without a UI (Alpine image, or after three UI failures) a `pacman login:` prompt appears at
+~12 s (user **root**, no password). Type into it from the PC:
 ```sh
 conspy 1          # in picocom/telnet: attach to the panel's console
                   # exit: press Esc three times quickly
@@ -145,6 +154,7 @@ pacman-dash                        # dashboard on the panel: load + temperatures
 # temperatures (millidegrees C)
 for z in /sys/class/thermal/thermal_zone*; do echo "$(cat $z/type) $(cat $z/temp)"; done
 
+cat /sys/devices/system/cpu/cpufreq/policy*/scaling_cur_freq   # CPU frequencies (kHz)
 dmesg | grep -i therm              # thermal driver
 dmesg | grep -iE "mtu3|g_cdc"      # USB
 free -m; cat /proc/loadavg; top
@@ -202,7 +212,7 @@ push while an Alpine shell is open (`/tmp/alpine` is replaced).
 ## 5. Building
 
 ```bash
-# phone programs (pacman-dash, pacman-reboot) -> port/ui/
+# phone programs (pacman-dash, pacman-reboot, pacman-keysd) -> port/ui/
 make -C ~/pacman/port/ui
 make -C ~/pacman/port/ui preview         # PC preview of pacman-dash -> ui/preview.png
 
@@ -210,18 +220,24 @@ make -C ~/pacman/port/ui preview         # PC preview of pacman-dash -> ui/previ
 bash ~/pacman/port/tools/build-busybox.sh
 bash ~/pacman/port/tools/build-fastfetch.sh
 
-# kernel (the initramfs picks the programs above up automatically)
+# kernel (the initramfs picks the programs above and the touch/SPI/cpufreq modules up:
+# build the modules FIRST, or an old module with the wrong version ends up in the image)
 cd ~/pacman/linux && export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 ./scripts/kconfig/merge_config.sh -m .config ../port/pacman.config && make olddefconfig
-make -j$(nproc) Image.lz4
+make -j$(nproc) modules && make -j$(nproc) Image.lz4
 mkbootimg --header_version 4 --kernel arch/arm64/boot/Image.lz4 -o ../out/pacman-NEW-boot.img
 
 # device tree: compile + wrap for LK (current: hybrid/test-T.dts); --check verifies all images
 bash ~/pacman/port/tools/build-dtb.sh ~/pacman/port/hybrid/test-T.dts
 bash ~/pacman/port/tools/build-dtb.sh --check
 
-# vendor_boot with Alpine as ramdisk (see section 4) and that device tree
+# vendor_boot with Alpine as ramdisk (see section 4) and that device tree (default: test-T)
 bash ~/pacman/port/tools/build-vendor-boot.sh ~/pacman/port/hybrid/test-T.img
+
+# checkpoint of the whole state (images, bundles, modules, SHA256SUMS) -> ~/pacman/checkpoint/
+bash ~/pacman/port/tools/checkpoint.sh --new-check "what works"
+bash ~/pacman/port/tools/checkpoint.sh --list
+bash ~/pacman/port/tools/checkpoint.sh --verify
 ```
 
 ### Check the size before flashing
@@ -229,7 +245,7 @@ LK bootloops on kernels above roughly **20 MiB LZ4 / 44 MiB decompressed**:
 ```bash
 ls -l ~/pacman/linux/arch/arm64/boot/Image ~/pacman/linux/arch/arm64/boot/Image.lz4
 ```
-The MediaTek-only config gives about 29.6 MiB / 16.0 MiB.
+The MediaTek-only config gives about 29.5 MiB / 16.2 MiB.
 
 ---
 
@@ -253,6 +269,9 @@ adb shell 'su -c "cat /sys/fs/pstore/console-ramoops-0"' > ~/pacman/logs/log-man
 | Garbled text in picocom | Kernel messages; quieten them (section 2) |
 | `pacsh.py` times out | Use `--net`; without it check `pgrep -a picocom` and that conspy is not running |
 | `pacman-reboot bootloader` did not reach fastboot | Power + volume down (short press) |
+| X runs (VNC shows it) but the panel stays black | Kernel without the opaque-layer fix (master): X writes alpha 0 |
+| No touch in sxmo/Phosh | `dmesg \| grep -E "pacman-init\|focaltech"`: SPI3 gate closed or module missing |
+| Phosh: "Something went wrong" / PIN refused / no wake-up | Rootfs built before the fixes: rebuild with `UI=phosh` (see CLAUDE.md) |
 
 Watch USB events on the PC: `journalctl -kf | grep -i usb`
 

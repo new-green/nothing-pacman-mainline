@@ -85,14 +85,17 @@ Both repos have the same three branches, each built on the previous one:
 - Talk to the phone: `tools/pacsh.py --net run 'cmd' [-t s]`, `tools/pacsh.py --net push LOCAL REMOTE [-x]`
   (telnet, own shell per call). Without `--net` it uses the serial shell shared with the owner's
   picocom (see Pitfalls). Screenshot: `tools/screenshot.py [out.png] [--scale f]`.
-- Build userspace: `make -C port/ui` (pacman-dash, pacman-reboot); once: `tools/build-busybox.sh`,
-  `tools/build-fastfetch.sh`. Kernel:
+- Build userspace: `make -C port/ui` (pacman-dash, pacman-reboot, pacman-keysd); once:
+  `tools/build-busybox.sh`, `tools/build-fastfetch.sh`. Kernel:
   `cd linux; export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-;`
-  `./scripts/kconfig/merge_config.sh -m .config ../port/pacman.config && make olddefconfig && make -j$(nproc) Image.lz4`;
+  `./scripts/kconfig/merge_config.sh -m .config ../port/pacman.config && make olddefconfig`;
+  `make -j$(nproc) modules && make -j$(nproc) Image.lz4` (**modules first**: initramfs.list embeds the
+  touch/SPI/cpufreq .ko files from the tree; vermagic must match, `-dirty` counts);
   `mkbootimg --header_version 4 --kernel arch/arm64/boot/Image.lz4 -o ../out/<name>-boot.img`.
-  The built-in initramfs embeds ui/ + busybox + fastfetch: rebuild the kernel after changing them.
-- Root filesystem + vendor_boot: `[DESKTOP=1] tools/build-alpine.sh [pkgs]`, then
-  `[ROOT=~/pacman/alpine/rootfs-desktop COMP=xz OUT=...] tools/build-vendor-boot.sh hybrid/test-P.img`.
+  The built-in initramfs embeds ui/ + busybox + fastfetch + modules: rebuild the kernel after changing them.
+- Root filesystem + vendor_boot: `[DESKTOP=1 | UI=sxmo | UI=phosh] tools/build-alpine.sh [pkgs]`, then
+  `[ROOT=~/pacman/alpine/rootfs-sxmo COMP=xz OUT=...] tools/build-vendor-boot.sh [hybrid/test-T.img]`
+  (default DTB test-T). The phosh rootfs is not put into vendor_boot: `tools/phosh-up.sh`.
 - DTB: edit `hybrid/<name>.dts`, `tools/build-dtb.sh hybrid/<name>.dts` (dtc + Android DT table);
   `tools/build-dtb.sh --check` verifies all committed `.img` files.
 - **Before every flash check the kernel size** (LK rule 5). Name new images, don't overwrite known-good ones.
@@ -111,14 +114,17 @@ Both repos have the same three branches, each built on the previous one:
   Branch `sxmo` = + cmdfb margins, cmdfb opaque layer (14); `phosh` = + pacman-drm (15). Old branch `pacman` = first 7 on 7.4-rc1 (fa4ad798f).
   Untracked there: `scripts/gen_init_cpio` (build artifact). The config fragment is `port/pacman.config`.
 - `port/` (git, master, pushed to GitHub): `pacman.config`, `kernel-patches/` (git am series on
-  `v7.3.3`), `drivers/` (copies of our three own drivers), `LICENSE`, `README.md`, `docs/COMMANDS.md`,
+  `v7.3.3`), `drivers/` (copies of our own drivers: cmdfb, pacman-drm, therm_intf, mt6363 keys, FT3681), `LICENSE`, `README.md`, `docs/COMMANDS.md`,
   `hybrid/` (DTB sources + wrapped images: test-H = stock + display node, test-U = + USB peripheral,
   test-P = + SPMI clocks, test-K = + SoC keypad, **test-T = + SPI3/touch, current**), `ui/` (initramfs: pacman-init.sh, initramfs.list,
-  pacman-dash.c, pacman-reboot.c, alpine-enter.sh, /etc files), `tools/`, `arch/` (clean minimal
+  pacman-dash.c, pacman-reboot.c, pacman-keysd.c, alpine-enter.sh, phosh-start.sh, /etc files),
+  `tools/` (builds, pacsh, screenshot, to-stock, checkpoint, alpine-push, phosh-up, touch-bringup,
+  recon-touch), `arch/` (clean minimal
   DTS, does not boot yet). Local-only, git-excluded: `KOMUTLAR.md`, `README.tr.md`.
 - `stock/` read-only backups. `work/` vendor_boot repack (`vb/`, `vb_args.txt` reproduces stock
   byte-for-byte). `out/` images. `logs/` pstore logs, `pl_lk.txt` (stock LK log), `live.dtb`.
-  `alpine/` (downloads, apk.static, `rootfs/`, `rootfs-desktop/`), `busybox/`, `fastfetch/`
+  `alpine/` (downloads, apk.static, `rootfs/`, `rootfs-desktop/`, `rootfs-sxmo/`, `rootfs-phosh/` +
+  their .tar.gz), `busybox/`, `fastfetch/`
   third-party sources + static binaries. `screenshots/`. `checkpoint/` (see Workflow). `archive/` old
   tests, old images, the pre-rewrite backup bundle.
 - `~/pacman/CLAUDE.md` is a symlink to this file.
@@ -188,12 +194,16 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 
 ## Userspace
 - Built-in initramfs (`ui/initramfs.list`), everything under `/pacman/`: busybox 1.37.0 (static,
-  sha256-pinned), fastfetch 2.70.0 (static, commit-pinned), pacman-dash, pacman-reboot, `alpine`
-  (chroot helper), `/pacman/etc` (passwd, issue, motd, os-release, udhcpd.conf).
+  sha256-pinned), fastfetch 2.70.0 (static, commit-pinned), pacman-dash, pacman-reboot, pacman-keysd,
+  `alpine` (chroot helper), `phosh-start`, `/pacman/lib/modules` (crc-ccitt, spi-mt65xx,
+  focaltech-fts-spi, mediatek-cpufreq-hw; sxmo+), `/pacman/etc` (passwd, issue, motd, os-release,
+  udhcpd.conf).
 - `/pacman-init` = `ui/pacman-init.sh` (busybox sh, PID 1), in order: mounts proc/sys/devtmpfs/tmpfs;
-  applet links; `/etc` and `/bin` -> `/pacman/...` if dangling; hostname; **SPT off**; if `/` is Alpine:
+  applet links; `/etc` and `/bin` -> `/pacman/...` if dangling; hostname; **SPT off**; modules
+  (cpufreq-hw; touch only if the SPI3 gate/mux read as on); pacman-keysd; if `/` is Alpine:
   Alpine PATH + /run; background job that at ~12 s quietens the console and starts
-  `/usr/local/bin/pacman-desktop` (XFCE) if present, else getty on tty1; usb0 172.16.42.1 + udhcpd
+  `/usr/local/bin/pacman-desktop` (XFCE or sxmo per /etc/pacman-ui; not while /tmp/pacman-desktop.stop
+  exists) if present, else getty on tty1; usb0 172.16.42.1 + udhcpd
   (PC gets 172.16.42.2, no router/DNS) + telnetd; respawning shell on /dev/ttyGS0.
   Logs "pacman-init: …" to /dev/kmsg.
 - cmdline: `console=ttyGS0,115200 console=tty0` (tty0 last = /dev/console), g_cdc MACs, ramoops, panic=5.
@@ -282,10 +292,13 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 - `DESKTOP=1 tools/build-alpine.sh` -> `~/pacman/alpine/rootfs-desktop`: xorg-server, xf86-video-fbdev,
   xinit, xfwm4, xfce4-panel, xfdesktop, xfce4-session, xfce4-settings, xfce4-terminal, font-dejavu,
   dbus(-x11), x11vnc. Mesa's libLLVM/libgallium/dri removed (no GPU; 649 MB full xfce4 -> 169 MB).
-  `ROOT=.../rootfs-desktop COMP=xz OUT=... tools/build-vendor-boot.sh hybrid/test-P.img` (gzip would
+  `ROOT=.../rootfs-desktop COMP=xz OUT=... tools/build-vendor-boot.sh` (DTB test-T; gzip would
   not fit LK's 64 MiB ramdisk buffer comfortably; kernel has RD_XZ, xz needs --check=crc32).
-- /etc/X11/xorg.conf.d/10-pacman.conf: fbdev on /dev/fb0, ShadowFB, Rotate CW, glx disabled, no
-  input devices (x11vnc injects). XFCE: Gdk WindowScalingFactor 2, xfwm4 theme Default-xhdpi, no compositing.
+- /etc/X11/xorg.conf.d/10-pacman.conf: fbdev on /dev/fb0, ShadowFB, Rotate CW (not for sxmo), glx
+  disabled, AutoAddDevices off; pacman-desktop generates 20-pacman-keys.conf at each start (evdev:
+  keys + touchscreen with a TransformationMatrix for rotation and panel margins). XFCE: Gdk
+  WindowScalingFactor 2, xfwm4 theme Default-xhdpi, no compositing. Visible on the panel only with
+  the opaque-layer fix (sxmo branch+); before that XFCE was used through VNC only.
 - `/usr/local/bin/pacman-desktop` (started by /pacman-init at ~12 s instead of getty; restarted on
   exit, login prompt after 3 quick failures): does what skipped apk post-install scripts would do
   (machine-id, **update-mime-database**, fc-cache, pixbuf loaders, schemas, icon caches), system dbus,
@@ -298,9 +311,8 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 
 ## Touchscreen (WORKS 2026-11-10: chip id 0x5662, fw 142, 6 MHz; evtest + XFCE)
 - Found live: LK leaves SPI3 clock gate open, spi_sel = 208 MHz, pins 141-144 in mode 2, chip powered
-  -> no MMIO/PMIC write was needed. Next: load the modules at boot (built in / init), EINT irq.
-- Ready to test: `out/pacman-touch1-boot.img` + `out/pacman-touch1-vendor_boot.img` (keys image + DTB
-  test-T, SPI/touch as modules), then `tools/touch-bringup.sh [--evtest 10] [--x]`: checks vermagic,
+  -> no MMIO/PMIC write was needed. Loaded at boot by /pacman-init since the sxmo branch. Next: EINT irq.
+- master images: `tools/touch-bringup.sh [--evtest 10] [--x]` loads it by hand: checks vermagic,
   reads the SPI3 gate/mux/pin modes (stops if gated), pushes + insmods crc-ccitt, spi-mt65xx,
   focaltech-fts-spi (`spi_hz` set for ~6 MHz SCK), shows dmesg/evtest, restarts X.
 - Vendor touch node comes from the dtbo overlay (`&spi3`, source: vendor
