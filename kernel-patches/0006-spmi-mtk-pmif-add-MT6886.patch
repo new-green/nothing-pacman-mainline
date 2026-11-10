@@ -1,7 +1,7 @@
 From 348c3823a36c0fd766ac3dffd65873abc8dc5b2f Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 19:53:41 +0300
-Subject: [PATCH 06/13] spmi: mtk-pmif: add MT6886
+Subject: [PATCH 06/14] spmi: mtk-pmif: add MT6886
 
 The PMIF and SPMI master of MT6886 (Dimensity 7200) use the same
 register layout as MT8195, and the AP uses software interface channel 2

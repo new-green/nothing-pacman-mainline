@@ -1,7 +1,7 @@
 From ff9f0e1be7f01c0784174cb04ec194bb7e075cc0 Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 00:15:21 +0300
-Subject: [PATCH 01/13] Nothing Phone (2a): MT6886 DTS and command-mode panel
+Subject: [PATCH 01/14] Nothing Phone (2a): MT6886 DTS and command-mode panel
  framebuffer
 
 ---

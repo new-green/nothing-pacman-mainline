@@ -1,7 +1,7 @@
 From a04ee61392482760fbb116a642e1a025122e4d53 Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 16:28:06 +0300
-Subject: [PATCH 05/13] fbdev: pacman-cmdfb: hide OVL layers LK leaves on top
+Subject: [PATCH 05/14] fbdev: pacman-cmdfb: hide OVL layers LK leaves on top
  of the framebuffer
 
 With an unlocked bootloader LK draws its "Orange State" warning into a

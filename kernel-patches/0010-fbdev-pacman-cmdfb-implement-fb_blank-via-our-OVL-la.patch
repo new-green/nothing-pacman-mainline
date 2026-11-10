@@ -1,7 +1,7 @@
 From e558b3d21a13073053890719be0d3e04751a23cc Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 17:00:12 +0300
-Subject: [PATCH 10/13] fbdev: pacman-cmdfb: implement fb_blank via our OVL
+Subject: [PATCH 10/14] fbdev: pacman-cmdfb: implement fb_blank via our OVL
  layer
 
 Remember the OVL layer that scans out the framebuffer while scanning the

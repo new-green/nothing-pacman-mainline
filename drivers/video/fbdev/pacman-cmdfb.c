@@ -19,6 +19,9 @@
  *    such a layer (ovl0 L1) on top of everything we draw,
  *  - implements fb_blank by switching our own OVL layer off and on: with no
  *    layer the OLED panel shows the black background, i.e. its pixels are off,
+ *  - makes our layer opaque: LK leaves per-pixel alpha blending on, and X
+ *    (depth 24) writes 0 into the alpha byte, so everything it drew was
+ *    transparent, i.e. black on the panel,
  *  - can leave rows at the top and bottom out of the visible framebuffer
  *    (top_margin/bottom_margin): the panel has rounded corners and a camera
  *    hole there, where text and buttons cannot be read or touched.
@@ -51,6 +54,8 @@
 /* MT6886 OVL layer registers (MediaTek's mtk_disp_ovl.c) */
 #define OVL_SRC_CON		0x002c	/* bits 0-3: layer L0-L3 enable */
 #define OVL_DATAPATH_EXT_CON	0x0324	/* bits 0-2: extended layer EL0-EL2 enable */
+#define OVL_L_CON(n)		(0x0030 + 0x20 * (n))
+#define OVL_CON_AEN		BIT(8)	/* alpha blending (per-pixel for ARGB formats) */
 #define OVL_L_ADDR(n)		(0x0f40 + 0x20 * (n))
 #define OVL_EL_ADDR(n)		(0x0fb0 + 0x10 * (n))
 #define OVL_NUM_LAYERS		4
@@ -212,6 +217,15 @@ static u32 pacman_cmdfb_scan_layers(struct pacman_cmdfb *p, struct device_node *
 		if (!(enable & BIT(n)))
 			continue;
 		if (a == fb) {
+			/* L layers only: the EL ones have their control elsewhere */
+			if (reg == OVL_SRC_CON) {
+				u32 con = readl(ovl + OVL_L_CON(n));
+
+				if (con & OVL_CON_AEN) {
+					writel(con & ~OVL_CON_AEN, ovl + OVL_L_CON(n));
+					dev_info(p->dev, "%pOF: L%d made opaque (alpha off)\n", np, n);
+				}
+			}
 			if (!p->fb_ovl) {
 				p->fb_ovl = ovl;
 				p->fb_ovl_reg = reg;

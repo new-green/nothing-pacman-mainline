@@ -142,7 +142,11 @@ ovl0_2l @0x14003000, ovl1_2l @0x14004000. MT6886 OVL regs (downstream mtk_disp_o
 SRC_CON +0x2c (bits 0-3 = layer L0-L3 enable), DATAPATH_EXT_CON +0x324 (bits 0-2 = EL0-EL2),
 layer addr +0xf40+0x20n, ext layer addr +0xfb0+0x10n, RDMA_CTRL(n). As LK leaves it: ovl1_2l L0 =
 our fb (0xfe050000, pitch 4352); **ovl0 L1 = "Orange State" warning** (buffer 0xfea68000, 1084x2412,
-alpha) blended on top. Clearing ovl0 SRC_CON bit 1 removes it (verified live); cmdfb now clears
+alpha) blended on top. Clearing ovl0 SRC_CON bit 1 removes it (verified live);
+**our layer's L0_CON (ovl1_2l +0x30) = 0x21ff as LK leaves it: AEN (bit 8) + ARGB -> per-pixel
+alpha.** Xorg (depth 24) writes alpha 0 -> everything X drew was transparent = black on the panel
+(VNC and fb0 reads looked fine; fbcon/pacman-dash write alpha 0xff). cmdfb clears AEN at probe
+(2026-11-10; so XFCE was never visible on the panel before either); cmdfb now clears
 every enabled L/EL layer whose address != our fb at probe (param `pacman_cmdfb.hide_lk_layers`).
 
 **USB.** DT `/soc/usb0@11201000` (mtu3) + `/soc/usb-phy0@11e40000` (xsphy). test-U changes: clocks
@@ -223,7 +227,7 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
 - Normal-boot reference: logs/pl_lk.txt (stock, SELFWDT=0x0).
 
 ## sxmo phone UI (branch `sxmo` in port/ and linux/, WORKS 2026-11-10)
-- Images: `out/pacman-sxmo3-boot.img` (+ cmdfb margins, kernel 7.3.3-00012-dirty with the four
+- Images: `out/pacman-sxmo5-boot.img` (7.3.3-00014: + cmdfb margins + opaque layer, the four
   modules in its initramfs) + `out/pacman-sxmo4-vendor_boot.img` (`UI=sxmo tools/build-alpine.sh`,
   rootfs-sxmo 161 MB, 37 MB vendor_boot, DTB test-T).
 - Boot: /pacman-init loads cpufreq-hw and (after reading the SPI3 gate/mux) the touch modules from
