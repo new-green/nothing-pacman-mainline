@@ -1,7 +1,7 @@
 From 17889d6a86dac03a5a0613c507a48e7fc84fc19b Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 17:45:35 +0300
-Subject: [PATCH 14/14] fbdev: pacman-cmdfb: make our OVL layer opaque
+Subject: [PATCH 14/15] fbdev: pacman-cmdfb: make our OVL layer opaque
 
 LK leaves the layer that scans out the framebuffer with alpha blending on
 (OVL_CON AEN, ARGB format). Kernel writers (fbcon, the test patterns) set

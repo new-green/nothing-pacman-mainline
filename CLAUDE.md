@@ -226,6 +226,26 @@ released after rootfs is mounted -> tmpfs rootfs limit shows ~4.7 GiB, /tmp ~5.3
   (mblock-10-log_store, 256 KiB at 0x33ffb0000, contains preloader+LK log of the current boot).
 - Normal-boot reference: logs/pl_lk.txt (stock, SELFWDT=0x0).
 
+## Phosh (branch `phosh` in port/ and linux/, WORKS 2026-11-10)
+- Kernel: `pacman-drm` (drivers/gpu/drm/sysfb/pacman-drm.c, drm_sysfb helpers) replaces pacman-cmdfb:
+  KMS for Wayland, fb0 via fbdev emulation (fbcon, Xorg fbdev keep working). Kicks coalesced (16 ms),
+  only damaged rows cleaned; CRTC disable = OVL layer off. Params pacman_drm.top_margin/bottom_margin.
+  Tested image: `out/pacman-drm2-boot.img` + `out/pacman-sxmo5-vendor_boot.img` (sxmo as base).
+- Phosh rootfs (`UI=phosh tools/build-alpine.sh`): 821 MB / 282 MB gz -> does NOT fit vendor_boot.
+  `tools/phosh-up.sh` sends it over USB into /tmp/phosh (~8 s at 36 MB/s) and runs `phosh-start`
+  (initramfs): parks the X desktop (/tmp/pacman-desktop.stop), stops pacman-keysd, mounts the chroot,
+  runs /usr/local/bin/pacman-phosh: caches, udevd (input+drm only, own /run: check sockets, not pgrep),
+  system dbus, seatd, then `phosh-session` as user (WLR_RENDERER=pixman, GSK_RENDERER=cairo, phoc.ini
+  DSI-1 scale 3). Log /tmp/phosh/tmp/phosh.log. `phosh-start stop` gives the panel back to X.
+- Pitfalls found: Mesa 25's libEGL links libgallium directly -> keep LLVM/gallium in this rootfs;
+  apk --usermode drops setuid bits -> unix_chkpwd (lock screen PIN, user password = 1234) and
+  dbus-daemon-launch-helper restored; gsd-power (needs UPower/logind) removed from phosh.session's
+  RequiredComponents (else "Something went wrong"); Phosh unblanks only through gnome-session presence
+  (no logind here) -> `pacman-power-wake` (python, autostart) calls org.gnome.ScreenSaver.SetActive
+  false on a power key press while blank. busybox `pkill -x NAME` does not match processes started by
+  full path (pacman-keysd, phoc): use `kill $(pidof NAME)`.
+- Missing: battery/UPower, audio, network indicators; rendering is CPU only (libinput warns about lag).
+
 ## sxmo phone UI (branch `sxmo` in port/ and linux/, WORKS 2026-11-10)
 - Images: `out/pacman-sxmo5-boot.img` (7.3.3-00014: + cmdfb margins + opaque layer, the four
   modules in its initramfs) + `out/pacman-sxmo4-vendor_boot.img` (`UI=sxmo tools/build-alpine.sh`,

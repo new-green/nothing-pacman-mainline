@@ -9,7 +9,8 @@
 set -euo pipefail
 
 TOP="${PACMAN:-$HOME/pacman}"
-TAR="$TOP/alpine/alpine-rootfs.tar.gz"
+TAR="${TAR:-$TOP/alpine/alpine-rootfs.tar.gz}"
+DEST="${DEST:-/tmp/alpine}"	# where it is unpacked on the phone (RAM)
 TOOLS="$(cd "$(dirname "$0")" && pwd)"
 ENTER="$TOOLS/../ui/alpine-enter.sh"
 PHONE=172.16.42.1
@@ -27,9 +28,9 @@ say "installing the 'alpine' command on the phone"
 pacsh push "$ENTER" /pacman/bin/alpine -x >/dev/null
 
 say "cleaning old /tmp/alpine, starting the receiver"
-pacsh run 'R=/tmp/alpine; for m in tmp dev/pts dev sys proc; do mountpoint -q $R/$m && umount -l $R/$m; done;
-rm -rf $R /tmp/alpine.rc; mkdir -p $R;
-setsid sh -c "nc -l -p '"$NC_PORT"' < /dev/null | tar -xzf - -C $R; echo \$? > /tmp/alpine.rc" < /dev/null > /dev/null 2>&1 &
+pacsh run 'R='"$DEST"'; for m in tmp dev/pts dev sys proc; do mountpoint -q $R/$m && umount -l $R/$m; done;
+rm -rf $R $R.rc; mkdir -p $R;
+setsid sh -c "nc -l -p '"$NC_PORT"' < /dev/null | tar -xzf - -C $R; echo \$? > $R.rc" < /dev/null > /dev/null 2>&1 &
 sleep 1; echo ok' -t 20 >/dev/null
 
 say "sending: $(du -h "$TAR" | cut -f1)"
@@ -48,10 +49,10 @@ print("    %.1f MB, %.1f s, %.1f MB/s" % (len(data) / 1e6, dt, len(data) / dt / 
 EOF
 
 for _ in $(seq 1 30); do
-	rc=$(pacsh run 'cat /tmp/alpine.rc 2>/dev/null' -t 10 | tr -d '\r\n ')
+	rc=$(pacsh run "cat $DEST.rc 2>/dev/null" -t 10 | tr -d '\r\n ')
 	[[ -n "$rc" ]] && break
 	sleep 1
 done
 [[ "$rc" == "0" ]] || die "unpacking on the phone failed (tar exit code: '${rc:-none}')"
-say "on the phone: $(pacsh run 'du -sh /tmp/alpine | cut -f1' -t 20 | tr -d '\r\n') /tmp/alpine"
+say "on the phone: $(pacsh run "du -sh $DEST | cut -f1" -t 60 | tr -d '\r\n') $DEST"
 say "ready. On the phone: alpine   (or one command: alpine fastfetch)"

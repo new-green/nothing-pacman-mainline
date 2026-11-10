@@ -1,7 +1,7 @@
 From 8089dcf0674b6d4121f27fcab274012a8f84c264 Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 19:53:41 +0300
-Subject: [PATCH 07/14] Input: add polled MT6363 PMIC keys driver
+Subject: [PATCH 07/15] Input: add polled MT6363 PMIC keys driver
 
 Mainline has no core (MFD/interrupt) driver for the MediaTek MT6363 PMIC
 yet, so read the power and home keys by polling the debounced status in

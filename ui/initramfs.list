@@ -17,6 +17,7 @@ file /pacman/bin/pacman-dash ../port/ui/pacman-dash 0755 0 0
 file /pacman/bin/pacman-reboot ../port/ui/pacman-reboot 0755 0 0
 file /pacman/bin/pacman-keysd ../port/ui/pacman-keysd 0755 0 0
 file /pacman/bin/alpine ../port/ui/alpine-enter.sh 0755 0 0
+file /pacman/bin/phosh-start ../port/ui/phosh-start.sh 0755 0 0
 # Needs the slim kernel (pacman.config): with the full defconfig this pushed the Image over
 # LK's limit (see CLAUDE.md).
 file /pacman/bin/fastfetch ../fastfetch/fastfetch 0755 0 0

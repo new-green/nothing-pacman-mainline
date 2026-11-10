@@ -95,6 +95,8 @@ fi
 		# restart the desktop when it exits; give up after 3 quick failures
 		fails=0
 		while [ $fails -lt 3 ]; do
+			# phosh-start (or anyone) can park the desktop: it is not restarted meanwhile
+			while [ -e /tmp/pacman-desktop.stop ]; do sleep 5; done
 			echo "pacman-init: starting XFCE desktop (VNC 172.16.42.1:5900)" > /dev/kmsg
 			t0=$(cut -d. -f1 /proc/uptime)
 			/usr/local/bin/pacman-desktop < /dev/null > /tmp/pacman-desktop.log 2>&1

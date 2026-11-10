@@ -95,6 +95,15 @@ Reads the phone's framebuffer (`/dev/fb0`) over the USB network.
 
 ## 4. On the phone
 
+### Phosh (GNOME's phone shell, branch `phosh`)
+Needs an image with the pacman-drm kernel. The Phosh root filesystem (~800 MB) is sent into RAM
+after boot; the phone must be on USB:
+```sh
+UI=phosh bash ~/pacman/port/tools/build-alpine.sh      # once: ~/pacman/alpine/alpine-rootfs-phosh.tar.gz
+bash ~/pacman/port/tools/phosh-up.sh                    # send (~8 s) + start; --start = start again
+```
+Lock screen PIN: 1234. On the phone, `phosh-start stop` returns to the X desktop.
+
 ### sxmo (phone UI, branch `sxmo`)
 ```sh
 UI=sxmo bash ~/pacman/port/tools/build-alpine.sh       # -> ~/pacman/alpine/rootfs-sxmo

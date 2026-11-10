@@ -1,7 +1,7 @@
 From 3642c83792297a431976394df9d5cc088660b239 Mon Sep 17 00:00:00 2001
 From: NewGreen <110980503+new-green@users.noreply.github.com>
 Date: Mon, 9 Nov 2026 20:12:15 +0300
-Subject: [PATCH 08/14] phy: mediatek: xsphy: clear U2 force bits left by the
+Subject: [PATCH 08/15] phy: mediatek: xsphy: clear U2 force bits left by the
  bootloader
 
 Backport of the U2PHYDTM0 part of a 7.4 change: clear the FORCE_DATAIN,
